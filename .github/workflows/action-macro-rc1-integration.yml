@@ -1,0 +1,31 @@
+name: Apply Action Macro RC1 Integration
+on:
+  push:
+    branches: [feature/action-recorder]
+    paths:
+      - '.github/workflows/action-macro-rc1-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: action-macro-rc1-integration
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.repository == 'gitlid/QtScrcpyCore' && github.ref == 'refs/heads/feature/action-recorder'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/action-recorder
+      - name: Apply checked source changes
+        run: python3 ci/apply-action-macro-rc1.py
+      - name: Commit only the reviewed integration files
+        run: |
+          git diff --check
+          git add src/device/controller/inputconvert/controlmsg.cpp src/device/controller/inputconvert/inputconvertgame.h src/device/controller/controller.h src/device/controller/controller.cpp src/device/device.cpp
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: integrate macro safety with control transport and display lifecycle'
+          git push origin HEAD:feature/action-recorder
