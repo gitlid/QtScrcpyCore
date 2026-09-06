@@ -72,7 +72,21 @@ bool Controller::sendMessage(ControlMsg *message)
 void Controller::uhidKeyEvent(const QKeyEvent *event)
 {
     if (!event || !m_uhidEnabled || m_inputBlocked || isActionPlaying()) { return; }
-    const QByteArray report = m_keyboard.update(*event);
+    // Recovery of already-held modifiers must not resurrect a modifier owned
+    // by a touch binding. Preserve unbound modifiers and native scan codes.
+    auto modifiers = event->modifiers();
+    auto *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    if (game && game->isCurrentCustomKeymap()) {
+        const int keys[] = {Qt::Key_Control, Qt::Key_Shift, Qt::Key_Alt, Qt::Key_Meta};
+        const Qt::KeyboardModifier flags[] = {Qt::ControlModifier, Qt::ShiftModifier, Qt::AltModifier, Qt::MetaModifier};
+        for (int i = 0; i < 4; ++i) {
+            if (game->handlesKeyboardKey(keys[i])) { modifiers &= ~Qt::KeyboardModifiers(flags[i]); }
+        }
+    }
+    QKeyEvent filtered(event->type(), event->key(), modifiers,
+                       event->nativeScanCode(), event->nativeVirtualKey(), event->nativeModifiers(),
+                       event->text(), event->isAutoRepeat(), ushort(event->count()));
+    const QByteArray report = m_keyboard.update(filtered);
     if (report.isEmpty()) { return; }
     auto *message = new ControlMsg(ControlMsg::CMT_UHID_INPUT);
     message->setUhidKeyboardReport(report);
@@ -103,7 +117,6 @@ void Controller::shutdownKeyboard()
     m_uhidCreated = false;
 }
 
-
 void Controller::setFrameSize(const QSize &size)
 {
     m_frameSize = size;
@@ -130,40 +143,26 @@ void Controller::resetInputState(bool preserveKeymap)
 
 void Controller::postControlMsg(ControlMsg *controlMsg)
 {
-    if (!controlMsg) {
-        return;
-    }
-
+    if (!controlMsg) { return; }
     if (m_cameraMode) {
         const auto type = controlMsg->type();
         const bool isCameraControl = type == ControlMsg::CMT_CAMERA_SET_TORCH
-                || type == ControlMsg::CMT_CAMERA_ZOOM_IN
-                || type == ControlMsg::CMT_CAMERA_ZOOM_OUT;
+                || type == ControlMsg::CMT_CAMERA_ZOOM_IN || type == ControlMsg::CMT_CAMERA_ZOOM_OUT;
         if (!isCameraControl) {
             qWarning() << "Ignoring display control message in camera mode:" << type;
             delete controlMsg;
             return;
         }
     }
-
-    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) {
-        delete controlMsg;
-        return;
-    }
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { delete controlMsg; return; }
     QCoreApplication::postEvent(this, controlMsg);
 }
 
-void Controller::setCameraMode(bool cameraMode)
-{
-    m_cameraMode = cameraMode;
-}
+void Controller::setCameraMode(bool cameraMode) { m_cameraMode = cameraMode; }
 
 void Controller::recvDeviceMsg(DeviceMsg *deviceMsg)
 {
-    if (!m_receiver) {
-        return;
-    }
-
+    if (!m_receiver) { return; }
     if (deviceMsg && deviceMsg->type() == DeviceMsg::DMT_UHID_OUTPUT
         && deviceMsg->uhidId() == ControlMsg::UhidKeyboardId && deviceMsg->uhidOutput().size() == 1) {
         m_keyboard.setLeds(quint8(deviceMsg->uhidOutput().at(0)));
@@ -184,204 +183,96 @@ void Controller::updateScript(QString gameScript)
     m_keyboardRouting.clear();
     releaseKeyboard();
     m_gameScript = gameScript;
-    if (m_inputConvert) {
-        delete m_inputConvert;
-    }
+    if (m_inputConvert) { delete m_inputConvert; }
     if (!gameScript.isEmpty()) {
         InputConvertGame *convertgame = new InputConvertGame(this);
         convertgame->loadKeyMap(gameScript);
         m_inputConvert = convertgame;
-    } else {
-        m_inputConvert = new InputConvertNormal(this);
-    }
+    } else { m_inputConvert = new InputConvertNormal(this); }
     Q_ASSERT(m_inputConvert);
     connect(m_inputConvert, &InputConvertBase::grabCursor, this, &Controller::grabCursor);
 }
 
 bool Controller::isCurrentCustomKeymap()
 {
-    if (!m_inputConvert) {
-        return false;
-    }
-
-    return m_inputConvert->isCurrentCustomKeymap();
+    return m_inputConvert && m_inputConvert->isCurrentCustomKeymap();
 }
 
 void Controller::postBackOrScreenOn(bool down)
 {
     ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_BACK_OR_SCREEN_ON);
     controlMsg->setBackOrScreenOnData(down);
-    if (!controlMsg) {
-        return;
-    }
     postControlMsg(controlMsg);
 }
-
-void Controller::postGoHome()
-{
-    postKeyCodeClick(AKEYCODE_HOME);
-}
-
-void Controller::postGoMenu()
-{
-    postKeyCodeClick(AKEYCODE_MENU);
-}
-
-void Controller::postGoBack()
-{
-    postKeyCodeClick(AKEYCODE_BACK);
-}
-
-void Controller::postAppSwitch()
-{
-    postKeyCodeClick(AKEYCODE_APP_SWITCH);
-}
-
-void Controller::postPower()
-{
-    postKeyCodeClick(AKEYCODE_POWER);
-}
-
-void Controller::postVolumeUp()
-{
-    postKeyCodeClick(AKEYCODE_VOLUME_UP);
-}
-
-void Controller::postVolumeDown()
-{
-    postKeyCodeClick(AKEYCODE_VOLUME_DOWN);
-}
-
-void Controller::copy()
-{
-    postKeyCodeClick(AKEYCODE_COPY);
-}
-
-void Controller::cut()
-{
-    postKeyCodeClick(AKEYCODE_CUT);
-}
-
-void Controller::expandNotificationPanel()
-{
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_EXPAND_NOTIFICATION_PANEL);
-    if (!controlMsg) {
-        return;
-    }
-    postControlMsg(controlMsg);
-}
-
-void Controller::expandSettingsPanel()
-{
-    postControlMsg(new ControlMsg(ControlMsg::CMT_EXPAND_SETTINGS_PANEL));
-}
-
-void Controller::collapsePanel()
-{
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_COLLAPSE_PANELS);
-    if (!controlMsg) {
-        return;
-    }
-    postControlMsg(controlMsg);
-}
-
-void Controller::rotateDevice()
-{
-    postControlMsg(new ControlMsg(ControlMsg::CMT_ROTATE_DEVICE));
-}
+void Controller::postGoHome() { postKeyCodeClick(AKEYCODE_HOME); }
+void Controller::postGoMenu() { postKeyCodeClick(AKEYCODE_MENU); }
+void Controller::postGoBack() { postKeyCodeClick(AKEYCODE_BACK); }
+void Controller::postAppSwitch() { postKeyCodeClick(AKEYCODE_APP_SWITCH); }
+void Controller::postPower() { postKeyCodeClick(AKEYCODE_POWER); }
+void Controller::postVolumeUp() { postKeyCodeClick(AKEYCODE_VOLUME_UP); }
+void Controller::postVolumeDown() { postKeyCodeClick(AKEYCODE_VOLUME_DOWN); }
+void Controller::copy() { postKeyCodeClick(AKEYCODE_COPY); }
+void Controller::cut() { postKeyCodeClick(AKEYCODE_CUT); }
+void Controller::expandNotificationPanel() { postControlMsg(new ControlMsg(ControlMsg::CMT_EXPAND_NOTIFICATION_PANEL)); }
+void Controller::expandSettingsPanel() { postControlMsg(new ControlMsg(ControlMsg::CMT_EXPAND_SETTINGS_PANEL)); }
+void Controller::collapsePanel() { postControlMsg(new ControlMsg(ControlMsg::CMT_COLLAPSE_PANELS)); }
+void Controller::rotateDevice() { postControlMsg(new ControlMsg(ControlMsg::CMT_ROTATE_DEVICE)); }
 
 void Controller::startApp(const QString &name)
 {
-    if (name.isEmpty()) {
-        return;
-    }
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_START_APP);
-    controlMsg->setStartAppData(name);
-    postControlMsg(controlMsg);
+    if (name.isEmpty()) { return; }
+    auto *message = new ControlMsg(ControlMsg::CMT_START_APP);
+    message->setStartAppData(name);
+    postControlMsg(message);
 }
-
 void Controller::scanFile(const QString &path)
 {
-    if (path.isEmpty()) {
-        return;
-    }
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_SCAN_FILE);
-    controlMsg->setScanFileData(path);
-    postControlMsg(controlMsg);
+    if (path.isEmpty()) { return; }
+    auto *message = new ControlMsg(ControlMsg::CMT_SCAN_FILE);
+    message->setScanFileData(path);
+    postControlMsg(message);
 }
-
 void Controller::resizeDisplay(const QSize &size)
 {
-    if (size.width() <= 0 || size.height() <= 0) {
-        return;
-    }
+    if (size.width() <= 0 || size.height() <= 0) { return; }
     m_pendingResize = size;
-    if (m_resizeQueued) {
-        return;
-    }
+    if (m_resizeQueued) { return; }
     m_resizeQueued = true;
     QTimer::singleShot(0, this, &Controller::sendPendingResize);
 }
-
 void Controller::sendPendingResize()
 {
     m_resizeQueued = false;
-    if (m_pendingResize.isEmpty()) {
-        return;
-    }
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_RESIZE_DISPLAY);
-    controlMsg->setResizeDisplayData(m_pendingResize);
+    if (m_pendingResize.isEmpty()) { return; }
+    auto *message = new ControlMsg(ControlMsg::CMT_RESIZE_DISPLAY);
+    message->setResizeDisplayData(m_pendingResize);
     m_pendingResize = QSize();
-    postControlMsg(controlMsg);
+    postControlMsg(message);
 }
-
-void Controller::requestDeviceClipboard()
-{
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_GET_CLIPBOARD);
-    if (!controlMsg) {
-        return;
-    }
-    postControlMsg(controlMsg);
-}
-
+void Controller::requestDeviceClipboard() { postControlMsg(new ControlMsg(ControlMsg::CMT_GET_CLIPBOARD)); }
 void Controller::getDeviceClipboard(bool cut)
 {
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_GET_CLIPBOARD);
-    if (!controlMsg) {
-        return;
-    }
-    ControlMsg::GetClipboardCopyKey copyKey = cut ? ControlMsg::GCCK_CUT : ControlMsg::GCCK_COPY;
-    controlMsg->setGetClipboardMsgData(copyKey);
-    postControlMsg(controlMsg);
+    auto *message = new ControlMsg(ControlMsg::CMT_GET_CLIPBOARD);
+    message->setGetClipboardMsgData(cut ? ControlMsg::GCCK_CUT : ControlMsg::GCCK_COPY);
+    postControlMsg(message);
 }
-
 void Controller::setDeviceClipboard(bool pause)
 {
-    QClipboard *board = QApplication::clipboard();
-    QString text = board->text();
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_SET_CLIPBOARD);
-    if (!controlMsg) {
-        return;
-    }
-    controlMsg->setSetClipboardMsgData(text, pause);
-    postControlMsg(controlMsg);
+    QString text = QApplication::clipboard()->text();
+    auto *message = new ControlMsg(ControlMsg::CMT_SET_CLIPBOARD);
+    message->setSetClipboardMsgData(text, pause);
+    postControlMsg(message);
 }
-
 void Controller::clipboardPaste()
 {
-    QClipboard *board = QApplication::clipboard();
-    QString text = board->text();
+    QString text = QApplication::clipboard()->text();
     postTextInput(text);
 }
-
 void Controller::postTextInput(QString &text)
 {
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_INJECT_TEXT);
-    if (!controlMsg) {
-        return;
-    }
-    controlMsg->setInjectTextMsgData(text);
-    postControlMsg(controlMsg);
+    auto *message = new ControlMsg(ControlMsg::CMT_INJECT_TEXT);
+    message->setInjectTextMsgData(text);
+    postControlMsg(message);
 }
 
 bool Controller::startActionRecording()
@@ -391,26 +282,10 @@ bool Controller::startActionRecording()
     resetInputState(true);
     return m_actionMacro->startRecording();
 }
-
-bool Controller::stopActionRecording()
-{
-    return m_actionMacro && m_actionMacro->stopRecording();
-}
-
-bool Controller::saveActionMacro(const QString &fileName, QString *error) const
-{
-    return m_actionMacro && m_actionMacro->save(fileName, error);
-}
-
-bool Controller::loadActionMacro(const QString &fileName, QString *error)
-{
-    return m_actionMacro && !m_cameraMode && m_actionMacro->load(fileName, error);
-}
-
-bool Controller::playActionMacro(int repeatCount, int intervalMs)
-{
-    return playActionMacroAdvanced(repeatCount, intervalMs, 1.0, 0);
-}
+bool Controller::stopActionRecording() { return m_actionMacro && m_actionMacro->stopRecording(); }
+bool Controller::saveActionMacro(const QString &fileName, QString *error) const { return m_actionMacro && m_actionMacro->save(fileName, error); }
+bool Controller::loadActionMacro(const QString &fileName, QString *error) { return m_actionMacro && !m_cameraMode && m_actionMacro->load(fileName, error); }
+bool Controller::playActionMacro(int repeatCount, int intervalMs) { return playActionMacroAdvanced(repeatCount, intervalMs, 1.0, 0); }
 
 bool Controller::playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs)
 {
@@ -425,7 +300,6 @@ bool Controller::playActionMacroAdvanced(int repeatCount, int intervalMs, double
     if (!playing && !m_uhidEnabled) { shutdownKeyboard(); }
     return playing;
 }
-
 bool Controller::pauseActionMacro()
 {
     if (!m_actionMacro) { return false; }
@@ -443,55 +317,24 @@ bool Controller::resumeActionMacro()
 bool Controller::isActionPaused() const { return m_actionMacro && m_actionMacro->isPaused(); }
 bool Controller::actionMacroInterruptedInput() const { return m_actionMacro && m_actionMacro->interruptedInput(); }
 qint64 Controller::actionMacroElapsedMs() const { return m_actionMacro ? m_actionMacro->activeElapsedMs() : 0; }
-
-void Controller::stopActionPlayback()
-{
-    if (m_actionMacro) {
-        m_actionMacro->stopPlayback();
-    }
-}
-
-bool Controller::isActionRecording() const
-{
-    return m_actionMacro && m_actionMacro->isRecording();
-}
-
-bool Controller::isActionPlaying() const
-{
-    return m_actionMacro && m_actionMacro->isPlaying();
-}
-
-int Controller::actionMacroEventCount() const
-{
-    return m_actionMacro ? m_actionMacro->eventCount() : 0;
-}
-
+void Controller::stopActionPlayback() { if (m_actionMacro) { m_actionMacro->stopPlayback(); } }
+bool Controller::isActionRecording() const { return m_actionMacro && m_actionMacro->isRecording(); }
+bool Controller::isActionPlaying() const { return m_actionMacro && m_actionMacro->isPlaying(); }
+int Controller::actionMacroEventCount() const { return m_actionMacro ? m_actionMacro->eventCount() : 0; }
 void Controller::setDisplayPower(bool on)
 {
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_SET_DISPLAY_POWER);
-    if (!controlMsg) {
-        return;
-    }
-    controlMsg->setDisplayPowerData(on);
-    postControlMsg(controlMsg);
+    auto *message = new ControlMsg(ControlMsg::CMT_SET_DISPLAY_POWER);
+    message->setDisplayPowerData(on);
+    postControlMsg(message);
 }
-
 void Controller::setCameraTorch(bool on)
 {
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_CAMERA_SET_TORCH);
-    controlMsg->setCameraTorchData(on);
-    postControlMsg(controlMsg);
+    auto *message = new ControlMsg(ControlMsg::CMT_CAMERA_SET_TORCH);
+    message->setCameraTorchData(on);
+    postControlMsg(message);
 }
-
-void Controller::cameraZoomIn()
-{
-    postControlMsg(new ControlMsg(ControlMsg::CMT_CAMERA_ZOOM_IN));
-}
-
-void Controller::cameraZoomOut()
-{
-    postControlMsg(new ControlMsg(ControlMsg::CMT_CAMERA_ZOOM_OUT));
-}
+void Controller::cameraZoomIn() { postControlMsg(new ControlMsg(ControlMsg::CMT_CAMERA_ZOOM_IN)); }
+void Controller::cameraZoomOut() { postControlMsg(new ControlMsg(ControlMsg::CMT_CAMERA_ZOOM_OUT)); }
 
 void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
@@ -506,16 +349,12 @@ void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, con
         }
     }
 }
-
 void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize)
 {
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);
-    if (m_inputConvert) {
-        m_inputConvert->wheelEvent(from, frameSize, showSize);
-    }
+    if (m_inputConvert) { m_inputConvert->wheelEvent(from, frameSize, showSize); }
 }
-
 void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
     if (!from || m_cameraMode || m_inputBlocked || isActionPlaying()
@@ -528,15 +367,11 @@ void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const Q
     const auto decision = m_keyboardRouting.dispatch(*from, preferred);
     if (decision.route == KeyboardRouting::Ignore) { return; }
     if (decision.route == KeyboardRouting::Uhid) {
-        // Keep the original native scancode and modifier events for Android's
-        // physical keyboard. Never send this key through the touch mapper too.
         uhidKeyEvent(from);
         return;
     }
     if (m_inputConvert) {
         const bool wasGameMap = isCurrentCustomKeymap();
-        // Release the same logical mapping chosen on key-down, even if the
-        // keyboard layout or Shift/Tab representation has changed meanwhile.
         QKeyEvent paired(from->type(), decision.logicalKey, from->modifiers(),
                          from->nativeScanCode(), from->nativeVirtualKey(), from->nativeModifiers(),
                          from->text(), from->isAutoRepeat(), ushort(from->count()));
@@ -566,29 +401,18 @@ bool Controller::event(QEvent *event)
 
 bool Controller::sendControl(const QByteArray &buffer)
 {
-    if (buffer.isEmpty()) {
-        return false;
-    }
+    if (buffer.isEmpty()) { return false; }
     qint32 len = 0;
-    if (m_sendData) {
-        len = static_cast<qint32>(m_sendData(buffer));
-    }
-    return len == buffer.length() ? true : false;
+    if (m_sendData) { len = static_cast<qint32>(m_sendData(buffer)); }
+    return len == buffer.length();
 }
 
 void Controller::postKeyCodeClick(AndroidKeycode keycode)
 {
-    ControlMsg *controlEventDown = new ControlMsg(ControlMsg::CMT_INJECT_KEYCODE);
-    if (!controlEventDown) {
-        return;
-    }
-    controlEventDown->setInjectKeycodeMsgData(AKEY_EVENT_ACTION_DOWN, keycode, 0, AMETA_NONE);
-    postControlMsg(controlEventDown);
-
-    ControlMsg *controlEventUp = new ControlMsg(ControlMsg::CMT_INJECT_KEYCODE);
-    if (!controlEventUp) {
-        return;
-    }
-    controlEventUp->setInjectKeycodeMsgData(AKEY_EVENT_ACTION_UP, keycode, 0, AMETA_NONE);
-    postControlMsg(controlEventUp);
+    auto *down = new ControlMsg(ControlMsg::CMT_INJECT_KEYCODE);
+    down->setInjectKeycodeMsgData(AKEY_EVENT_ACTION_DOWN, keycode, 0, AMETA_NONE);
+    postControlMsg(down);
+    auto *up = new ControlMsg(ControlMsg::CMT_INJECT_KEYCODE);
+    up->setInjectKeycodeMsgData(AKEY_EVENT_ACTION_UP, keycode, 0, AMETA_NONE);
+    postControlMsg(up);
 }
