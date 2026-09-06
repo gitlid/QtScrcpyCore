@@ -2,7 +2,9 @@
 #include <QClipboard>
 #include <QTimer>
 
+#include "actionmacro.h"
 #include "controller.h"
+#include "devicemsg.h"
 #include "controlmsg.h"
 #include "inputconvertgame.h"
 #include "receiver.h"
@@ -15,10 +17,130 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
     m_receiver = new Receiver(this);
     Q_ASSERT(m_receiver);
 
+    m_actionMacro = new ActionMacro([this](ControlMsg *message) {
+        // Synchronous enqueue into the control socket. Macro events must not
+        // survive Stop in Qt's posted-event queue.
+        const bool sent = sendMessage(message);
+        delete message;
+        if (!sent && m_actionMacro) {
+            m_actionMacro->abort(tr("The device control connection failed. Playback has stopped."));
+        }
+    }, this);
+    connect(m_actionMacro, &ActionMacro::stateChanged, this,
+            [this](bool recording, bool playing, int count) {
+        const bool busy = recording || playing;
+        const bool finished = m_macroWasBusy && !busy;
+        m_macroWasBusy = busy;
+        if (finished) {
+            resetInputState();
+            if (!m_uhidEnabled) { shutdownKeyboard(); }
+        }
+        emit actionMacroStateChanged(recording, playing, count);
+    });
+    connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
+    connect(m_actionMacro, &ActionMacro::errorOccurred, this, &Controller::actionMacroError);
+
     updateScript(gameScript);
 }
 
-Controller::~Controller() {}
+Controller::~Controller() { shutdownKeyboard(); }
+
+bool Controller::ensureUhidKeyboard()
+{
+    if (m_cameraMode) { return false; }
+    if (m_uhidCreated) { return true; }
+    ControlMsg create(ControlMsg::CMT_UHID_CREATE);
+    m_uhidCreated = sendControl(create.serializeData());
+    return m_uhidCreated;
+}
+
+bool Controller::setUhidKeyboardEnabled(bool enabled)
+{
+    if (isActionRecording() || isActionPlaying() || m_cameraMode) { return false; }
+    m_uhidEnabled = enabled;
+    if (enabled && !ensureUhidKeyboard()) { return false; }
+    if (!enabled) { shutdownKeyboard(); }
+    return true;
+}
+
+bool Controller::sendMessage(ControlMsg *message)
+{
+    if (message->type() == ControlMsg::CMT_UHID_INPUT && !ensureUhidKeyboard()) { return false; }
+    return sendControl(message->serializeData());
+}
+
+void Controller::uhidKeyEvent(const QKeyEvent *event)
+{
+    if (!event || !m_uhidEnabled || m_inputBlocked || isActionPlaying()) { return; }
+    Qt::KeyboardModifiers modifiers = event->modifiers();
+    InputConvertGame *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    if (game) {
+        const Qt::KeyboardModifier flags[] = {Qt::ControlModifier, Qt::ShiftModifier, Qt::AltModifier, Qt::MetaModifier};
+        const int keys[] = {Qt::Key_Control, Qt::Key_Shift, Qt::Key_Alt, Qt::Key_Meta};
+        for (int i = 0; i < 4; ++i) {
+            if (game->handlesKeyboardKey(keys[i])) { modifiers &= ~flags[i]; }
+        }
+    }
+    // UhidKeyboard recovers held modifiers from Qt flags. Do not resurrect a
+    // modifier which belongs exclusively to a touch mapping or mode switch.
+    QKeyEvent filtered(event->type(), event->key(), modifiers, event->nativeScanCode(),
+                       event->nativeVirtualKey(), event->nativeModifiers(), event->text(),
+                       event->isAutoRepeat(), ushort(event->count()));
+    const QByteArray report = m_keyboard.update(filtered);
+    if (report.isEmpty()) { return; }
+    auto *message = new ControlMsg(ControlMsg::CMT_UHID_INPUT);
+    message->setUhidKeyboardReport(report);
+    postControlMsg(message);
+}
+
+void Controller::releaseKeyboard()
+{
+    if (isActionPlaying()) { return; } // Playback owns its keys until Stop.
+    QCoreApplication::sendPostedEvents(this, ControlMsg::Control);
+    m_keyboard.clear();
+    m_keyboardRouting.clearUhid();
+    if (!m_uhidCreated) { return; }
+    ControlMsg release(ControlMsg::CMT_UHID_INPUT);
+    if (sendMessage(&release) && m_actionMacro) { m_actionMacro->record(release); }
+}
+
+void Controller::shutdownKeyboard()
+{
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    m_keyboard.clear();
+    m_keyboardRouting.clearUhid();
+    if (!m_uhidCreated) { return; }
+    ControlMsg release(ControlMsg::CMT_UHID_INPUT);
+    sendControl(release.serializeData());
+    ControlMsg destroy(ControlMsg::CMT_UHID_DESTROY);
+    sendControl(destroy.serializeData());
+    m_uhidCreated = false;
+}
+
+
+void Controller::setFrameSize(const QSize &size)
+{
+    m_frameSize = size;
+    if (m_actionMacro) { m_actionMacro->setCurrentScreen(size); }
+}
+
+void Controller::resetInputState(bool preserveKeymap)
+{
+    if (m_inputBlocked) { return; }
+    m_inputBlocked = true;
+    m_keyboardRouting.clear();
+    const bool gameEnabled = preserveKeymap && isCurrentCustomKeymap();
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    if (m_actionMacro) { m_actionMacro->releaseInputs(); }
+    m_keyboard.clear();
+    // Destroy the old mapper: its child timers and context-bound delayed
+    // callbacks must not regenerate held touches after an emergency stop.
+    updateScript(m_gameScript);
+    InputConvertGame *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    if (game) { game->restoreGameMap(gameEnabled); }
+    emit grabCursor(false);
+    m_inputBlocked = false;
+}
 
 void Controller::postControlMsg(ControlMsg *controlMsg)
 {
@@ -38,6 +160,10 @@ void Controller::postControlMsg(ControlMsg *controlMsg)
         }
     }
 
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) {
+        delete controlMsg;
+        return;
+    }
     QCoreApplication::postEvent(this, controlMsg);
 }
 
@@ -52,6 +178,10 @@ void Controller::recvDeviceMsg(DeviceMsg *deviceMsg)
         return;
     }
 
+    if (deviceMsg && deviceMsg->type() == DeviceMsg::DMT_UHID_OUTPUT
+        && deviceMsg->uhidId() == ControlMsg::UhidKeyboardId && deviceMsg->uhidOutput().size() == 1) {
+        m_keyboard.setLeds(quint8(deviceMsg->uhidOutput().at(0)));
+    }
     m_receiver->recvDeviceMsg(deviceMsg);
 }
 
@@ -65,6 +195,9 @@ void Controller::test(QRect rc)
 
 void Controller::updateScript(QString gameScript)
 {
+    m_keyboardRouting.clear();
+    releaseKeyboard();
+    m_gameScript = gameScript;
     if (m_inputConvert) {
         delete m_inputConvert;
     }
@@ -265,6 +398,88 @@ void Controller::postTextInput(QString &text)
     postControlMsg(controlMsg);
 }
 
+bool Controller::startActionRecording()
+{
+    if (!m_actionMacro || m_cameraMode || m_actionMacro->isPlaying()
+        || m_actionMacro->isRecording() || !m_frameSize.isValid()) { return false; }
+    resetInputState(true);
+    return m_actionMacro->startRecording();
+}
+
+bool Controller::stopActionRecording()
+{
+    return m_actionMacro && m_actionMacro->stopRecording();
+}
+
+bool Controller::saveActionMacro(const QString &fileName, QString *error) const
+{
+    return m_actionMacro && m_actionMacro->save(fileName, error);
+}
+
+bool Controller::loadActionMacro(const QString &fileName, QString *error)
+{
+    return m_actionMacro && !m_cameraMode && m_actionMacro->load(fileName, error);
+}
+
+bool Controller::playActionMacro(int repeatCount, int intervalMs)
+{
+    return playActionMacroAdvanced(repeatCount, intervalMs, 1.0, 0);
+}
+
+bool Controller::playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs)
+{
+    if (!m_actionMacro || m_cameraMode || m_actionMacro->isRecording()
+        || m_actionMacro->isPlaying() || !m_frameSize.isValid()) { return false; }
+    resetInputState();
+    if (m_actionMacro->requiresUhidKeyboard() && !ensureUhidKeyboard()) {
+        emit actionMacroError(tr("Cannot create the UHID keyboard for this macro."));
+        return false;
+    }
+    const bool playing = m_actionMacro->play(repeatCount, intervalMs, speed, limitMs);
+    if (!playing && !m_uhidEnabled) { shutdownKeyboard(); }
+    return playing;
+}
+
+bool Controller::pauseActionMacro()
+{
+    if (!m_actionMacro) { return false; }
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    const bool ok = m_actionMacro->pause();
+    if (ok && m_actionMacro->isRecording()) { resetInputState(true); }
+    return ok;
+}
+bool Controller::resumeActionMacro()
+{
+    if (!m_actionMacro) { return false; }
+    if (m_actionMacro->isRecording()) { resetInputState(true); }
+    return m_actionMacro->resume();
+}
+bool Controller::isActionPaused() const { return m_actionMacro && m_actionMacro->isPaused(); }
+bool Controller::actionMacroInterruptedInput() const { return m_actionMacro && m_actionMacro->interruptedInput(); }
+qint64 Controller::actionMacroElapsedMs() const { return m_actionMacro ? m_actionMacro->activeElapsedMs() : 0; }
+
+void Controller::stopActionPlayback()
+{
+    if (m_actionMacro) {
+        m_actionMacro->stopPlayback();
+    }
+}
+
+bool Controller::isActionRecording() const
+{
+    return m_actionMacro && m_actionMacro->isRecording();
+}
+
+bool Controller::isActionPlaying() const
+{
+    return m_actionMacro && m_actionMacro->isPlaying();
+}
+
+int Controller::actionMacroEventCount() const
+{
+    return m_actionMacro ? m_actionMacro->eventCount() : 0;
+}
+
 void Controller::setDisplayPower(bool on)
 {
     ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_SET_DISPLAY_POWER);
@@ -294,13 +509,22 @@ void Controller::cameraZoomOut()
 
 void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    setFrameSize(frameSize);
     if (m_inputConvert) {
+        const bool wasGameMap = isCurrentCustomKeymap();
         m_inputConvert->mouseEvent(from, frameSize, showSize);
+        if (wasGameMap != isCurrentCustomKeymap()) {
+            if (isCurrentCustomKeymap()) { releaseKeyboard(); }
+            else { resetInputState(); }
+        }
     }
 }
 
 void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    setFrameSize(frameSize);
     if (m_inputConvert) {
         m_inputConvert->wheelEvent(from, frameSize, showSize);
     }
@@ -308,8 +532,33 @@ void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, con
 
 void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (!from || m_cameraMode || m_inputBlocked || isActionPlaying()
+        || !frameSize.isValid() || !showSize.isValid()
+        || (from->type() != QEvent::KeyPress && from->type() != QEvent::KeyRelease)) { return; }
+    setFrameSize(frameSize);
+    auto *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    const bool mapped = game && game->handlesKeyboardKey(from->key());
+    const auto preferred = m_uhidEnabled && !mapped ? KeyboardRouting::Uhid : KeyboardRouting::Converter;
+    const auto decision = m_keyboardRouting.dispatch(*from, preferred);
+    if (decision.route == KeyboardRouting::Ignore) { return; }
+    if (decision.route == KeyboardRouting::Uhid) {
+        // Keep the original native scancode and modifier events for Android's
+        // physical keyboard. Never send this key through the touch mapper too.
+        uhidKeyEvent(from);
+        return;
+    }
     if (m_inputConvert) {
-        m_inputConvert->keyEvent(from, frameSize, showSize);
+        const bool wasGameMap = isCurrentCustomKeymap();
+        // Release the same logical mapping chosen on key-down, even if the
+        // keyboard layout or Shift/Tab representation has changed meanwhile.
+        QKeyEvent paired(from->type(), decision.logicalKey, from->modifiers(),
+                         from->nativeScanCode(), from->nativeVirtualKey(), from->nativeModifiers(),
+                         from->text(), from->isAutoRepeat(), ushort(from->count()));
+        m_inputConvert->keyEvent(&paired, frameSize, showSize);
+        if (wasGameMap != isCurrentCustomKeymap()) {
+            if (isCurrentCustomKeymap()) { releaseKeyboard(); }
+            else { resetInputState(); }
+        }
     }
 }
 
@@ -317,8 +566,12 @@ bool Controller::event(QEvent *event)
 {
     if (event && static_cast<ControlMsg::Type>(event->type()) == ControlMsg::Control) {
         ControlMsg *controlMsg = dynamic_cast<ControlMsg *>(event);
-        if (controlMsg) {
-            sendControl(controlMsg->serializeData());
+        if (controlMsg && !m_inputBlocked && !(m_actionMacro && m_actionMacro->isPlaying())) {
+            if (sendMessage(controlMsg)) {
+                if (m_actionMacro) { m_actionMacro->record(*controlMsg); }
+            } else if (m_actionMacro && m_actionMacro->isRecording()) {
+                m_actionMacro->abort(tr("The device control connection failed. Recording has stopped."));
+            }
         }
         return true;
     }

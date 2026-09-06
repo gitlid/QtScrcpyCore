@@ -1,0 +1,47 @@
+name: Keymapper input regression
+on:
+  push:
+    branches: [main, feature/scrcpy-keymapper]
+    tags: ['keymapper-v*']
+    paths: ['src/**', 'include/**', 'tests/**', 'CMakeLists.txt', '.github/workflows/macro-v2.yml']
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'include/**', 'tests/**', 'CMakeLists.txt', '.github/workflows/macro-v2.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: keymapper-core-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    if: github.repository == 'gitlid/QtScrcpyCore'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt and build committed regression sources
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qtbase5-dev ninja-build
+          cmake -S tests -B build-input -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined -no-pie'
+          cmake --build build-input --parallel 2
+      - name: Regression tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ctest --test-dir build-input --output-on-failure --output-junit results.xml
+          git rev-parse HEAD > tested-commit.txt
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: keymapper-core-results
+          path: |
+            build-input/Testing/Temporary/*.log
+            build-input/results.xml
+            tested-commit.txt

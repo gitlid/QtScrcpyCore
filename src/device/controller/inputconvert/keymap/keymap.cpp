@@ -1,3 +1,4 @@
+#include <cmath>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
@@ -14,6 +15,13 @@ KeyMap::~KeyMap() {}
 
 void KeyMap::loadKeyMap(const QString &json)
 {
+    // Never retain an old view map or pointers into a previously loaded vector.
+    m_rmapKey.clear();
+    m_rmapMouse.clear();
+    m_keyMapNodes.clear();
+    m_idxMouseMove = -1;
+    m_idxSteerWheel = -1;
+    m_mouseLookEnabled = false;
     QString errorString;
     QJsonParseError jsonError;
     QJsonDocument jsonDoc;
@@ -44,11 +52,24 @@ void KeyMap::loadKeyMap(const QString &json)
     m_switchKey.type = switchKey.first;
     m_switchKey.key = switchKey.second;
 
-    // mouseMoveMap
-    if (checkItemObject(rootObj, "mouseMoveMap")) {
+    // Preserve existing FPS profiles. New ordinary profiles explicitly disable
+    // mouse look; editors must display this setting instead of hiding it.
+    if (rootObj.contains("mouseLookEnabled") && !rootObj.value("mouseLookEnabled").isBool()) {
+        errorString = QString("mouseLookEnabled must be boolean");
+        goto parseError;
+    }
+    m_mouseLookEnabled = rootObj.value("mouseLookEnabled").toBool(checkItemObject(rootObj, "mouseMoveMap"));
+    if (m_mouseLookEnabled && !checkItemObject(rootObj, "mouseMoveMap")) {
+        errorString = QString("Mouse look requires a mouseMoveMap");
+        goto parseError;
+    }
+    if (m_mouseLookEnabled) {
         QJsonObject mouseMoveMap = getItemObject(rootObj, "mouseMoveMap");
         KeyMapNode keyMapNode;
         keyMapNode.type = KMT_MOUSE_MOVE;
+        keyMapNode.data.mouseMove.startPos = QPointF();
+        keyMapNode.data.mouseMove.speedRatio = QPointF(1.0, 1.0);
+        keyMapNode.data.mouseMove.smallEyes = KeyNode();
 
         bool have_speedRatio = false;
 
@@ -78,7 +99,10 @@ void KeyMap::loadKeyMap(const QString &json)
         }
 
         // Sanity check: No ratio must be lower than 0.001
-        if ( ( keyMapNode.data.mouseMove.speedRatio.x() < 0.001f ) || ( keyMapNode.data.mouseMove.speedRatio.x() < 0.001f ) ) {
+        if (!std::isfinite(keyMapNode.data.mouseMove.speedRatio.x())
+            || !std::isfinite(keyMapNode.data.mouseMove.speedRatio.y())
+            || keyMapNode.data.mouseMove.speedRatio.x() < 0.001
+            || keyMapNode.data.mouseMove.speedRatio.y() < 0.001) {
             errorString = QString("json error: Minimum speedRatio is 0.001");
             goto parseError;
         }
@@ -320,6 +344,12 @@ void KeyMap::loadKeyMap(const QString &json)
 
 parseError:
     if (!errorString.isEmpty()) {
+        m_rmapKey.clear();
+        m_rmapMouse.clear();
+        m_keyMapNodes.clear();
+        m_idxMouseMove = -1;
+        m_idxSteerWheel = -1;
+        m_mouseLookEnabled = false;
         qWarning() << errorString;
     }
     return;
@@ -361,7 +391,7 @@ const KeyMap::KeyMapNode &KeyMap::getMouseMoveMap()
 
 bool KeyMap::isValidMouseMoveMap()
 {
-    return m_idxMouseMove != -1;
+    return m_mouseLookEnabled && m_idxMouseMove >= 0 && m_idxMouseMove < m_keyMapNodes.size();
 }
 
 bool KeyMap::isValidSteerWheelMap()
@@ -443,13 +473,11 @@ QPair<KeyMap::ActionType, int> KeyMap::getItemKey(const QJsonObject &node, const
     QString value = getItemString(node, name);
     int key = m_metaEnumKey.keyToValue(value.toStdString().c_str());
     int btn = m_metaEnumMouseButtons.keyToValue(value.toStdString().c_str());
-    if (key == -1 && btn == -1) {
-        return { AT_INVALID, -1 };
-    } else if (key != -1) {
-        return { AT_KEY, key };
-    } else {
+    if (key != -1 && key != Qt::Key_unknown) { return { AT_KEY, key }; }
+    if (btn > 0 && (btn & (btn - 1)) == 0 && btn <= int(Qt::MaxMouseButton)) {
         return { AT_MOUSE, btn };
     }
+    return { AT_INVALID, -1 };
 }
 
 KeyMap::KeyMapType KeyMap::getItemKeyMapType(const QJsonObject &node, const QString &name)

@@ -155,6 +155,76 @@ void Device::updateScript(QString script)
     }
 }
 
+bool Device::isUhidKeyboardEnabled() const
+{
+    return m_controller && m_controller->isUhidKeyboardEnabled();
+}
+
+void Device::releaseKeyboard()
+{
+    if (m_controller) { m_controller->releaseKeyboard(); }
+}
+
+bool Device::startActionRecording()
+{
+    return !isCameraMode() && m_controller && m_controller->startActionRecording();
+}
+
+bool Device::stopActionRecording()
+{
+    return m_controller && m_controller->stopActionRecording();
+}
+
+bool Device::saveActionMacro(const QString &fileName, QString *error) const
+{
+    return m_controller && m_controller->saveActionMacro(fileName, error);
+}
+
+bool Device::loadActionMacro(const QString &fileName, QString *error)
+{
+    return !isCameraMode() && m_controller && m_controller->loadActionMacro(fileName, error);
+}
+
+bool Device::playActionMacro(int repeatCount, int intervalMs)
+{
+    return !isCameraMode() && m_controller && m_controller->playActionMacro(repeatCount, intervalMs);
+}
+
+bool Device::playActionMacroAdvanced(int repeats, int interval, double speed, qint64 limitMs)
+{
+    return !isCameraMode() && m_serverStartSuccess && m_controller
+        && m_controller->playActionMacroAdvanced(repeats, interval, speed, limitMs);
+}
+QString Device::currentKeymapScript() const { return m_controller ? m_controller->currentKeymapScript() : QString(); }
+void Device::prepareKeymapEditing() { if (m_controller && !isActionPlaying() && !isActionRecording()) { m_controller->prepareKeymapEditing(); } }
+bool Device::pauseActionMacro() { return m_controller && m_controller->pauseActionMacro(); }
+bool Device::resumeActionMacro() { return m_serverStartSuccess && m_controller && m_controller->resumeActionMacro(); }
+bool Device::isActionPaused() const { return m_controller && m_controller->isActionPaused(); }
+bool Device::actionMacroInterruptedInput() const { return m_controller && m_controller->actionMacroInterruptedInput(); }
+qint64 Device::actionMacroElapsedMs() const { return m_controller ? m_controller->actionMacroElapsedMs() : 0; }
+
+void Device::stopActionPlayback()
+{
+    if (m_controller) {
+        m_controller->stopActionPlayback();
+    }
+}
+
+bool Device::isActionRecording() const
+{
+    return m_controller && m_controller->isActionRecording();
+}
+
+bool Device::isActionPlaying() const
+{
+    return m_controller && m_controller->isActionPlaying();
+}
+
+int Device::actionMacroEventCount() const
+{
+    return m_controller ? m_controller->actionMacroEventCount() : 0;
+}
+
 void Device::screenshot()
 {
     if (!m_decoder) {
@@ -227,6 +297,9 @@ void Device::initSignals()
                 item->grabCursor(grab);
             }
         });
+        connect(m_controller, &Controller::actionMacroStateChanged, this, &IDevice::actionMacroStateChanged);
+        connect(m_controller, &Controller::actionMacroProgress, this, &IDevice::actionMacroProgress);
+        connect(m_controller, &Controller::actionMacroError, this, &IDevice::actionMacroError);
     }
     if (m_fileHandler) {
         connect(m_fileHandler, &FileHandler::fileHandlerResult, this, [this](FileHandler::FILE_HANDLER_RESULT processResult, bool isApk) {
@@ -258,6 +331,7 @@ void Device::initSignals()
     if (m_server) {
         connect(m_server, &Server::serverStarted, this, [this](bool success, const QString &deviceName, const QSize &size) {
             m_serverStartSuccess = success;
+            if (m_controller) { m_controller->setFrameSize(success ? size : QSize()); }
             emit deviceConnected(success, m_params.serial, deviceName, size);
             if (success) {
                 double diff = m_startTimeCount.elapsed() / 1000.0;
@@ -310,6 +384,13 @@ void Device::initSignals()
                     }
                 });
 
+                if (m_controller && m_params.uhidKeyboard && !isCameraMode()) {
+                    if (!m_controller->setUhidKeyboardEnabled(true)) {
+                        qWarning("Could not create the UHID keyboard. Reconnect using compatible keyboard mode.");
+                    } else {
+                        qInfo("UHID keyboard requested. Android owns keyboard layout and IME.");
+                    }
+                }
                 // 显示界面时才自动息屏（m_params.display）
                 if (m_params.videoSource == VIDEO_SOURCE_DISPLAY && m_params.closeScreen && m_params.display && m_controller) {
                     m_controller->setDisplayPower(false);
@@ -333,6 +414,7 @@ void Device::initSignals()
     if (m_stream) {
         connect(m_stream, &Demuxer::sessionChanged, this, [this](const QSize &size, bool clientResized) {
             qInfo() << "Video session changed to" << size << "client resized:" << clientResized;
+            if (m_controller) { m_controller->setFrameSize(size); }
             if (m_decoder) {
                 m_decoder->onVideoSessionChanged(size);
             }
@@ -439,6 +521,12 @@ void Device::disconnectDevice()
 {
     if (!m_server) {
         return;
+    }
+    if (m_controller) {
+        m_controller->stopActionPlayback();
+        m_controller->stopActionRecording();
+        m_controller->shutdownKeyboard();
+        m_controller->setFrameSize(QSize());
     }
     m_server->stop();
     m_server = Q_NULLPTR;

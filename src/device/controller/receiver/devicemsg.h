@@ -25,6 +25,9 @@ public:
     DeviceMsg::DeviceMsgType type();
     void getClipboardMsgData(QString &text);
 
+    quint16 uhidId() const { return m_uhidId; }
+    QByteArray uhidOutput() const { return m_uhidOutput; }
+
     qint32 deserialize(QByteArray &byteArray);
 
 private:
@@ -43,6 +46,8 @@ private:
     };
 
     DeviceMsgData m_data;
+    quint16 m_uhidId = 0;
+    QByteArray m_uhidOutput;
 };
 
 #endif // DEVICEMSG_H

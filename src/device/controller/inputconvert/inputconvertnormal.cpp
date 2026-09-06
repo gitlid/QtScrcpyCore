@@ -10,8 +10,9 @@ InputConvertNormal::~InputConvertNormal() {}
 
 void InputConvertNormal::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
-    if (!from) {
-        return;
+    if (!from || !frameSize.isValid() || !showSize.isValid()) { return; }
+    if (from->type() != QEvent::MouseMove && from->button() != Qt::LeftButton) {
+        return; // Unmapped side/right/middle buttons are never generic finger taps.
     }
 
     // action
@@ -96,6 +97,10 @@ void InputConvertNormal::keyEvent(const QKeyEvent *from, const QSize &frameSize,
         return;
     }
 
+    if (m_controller && m_controller->isUhidKeyboardEnabled()) {
+        m_controller->uhidKeyEvent(from);
+        return;
+    }
     bool repeat = from->isAutoRepeat();
 
     // action

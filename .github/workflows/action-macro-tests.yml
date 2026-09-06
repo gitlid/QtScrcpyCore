@@ -1,0 +1,43 @@
+name: Action Macro Regression
+on:
+  push:
+    branches: [feature/action-recorder]
+    paths:
+      - 'src/device/controller/**'
+      - 'tests/**'
+      - '.github/workflows/action-macro-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: action-macro-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regressions:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Qt development tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qtbase5-dev ninja-build
+      - name: Configure and build with sanitizers
+        run: |
+          cmake -S tests -B build-macro-tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
+          cmake --build build-macro-tests --parallel 2
+      - name: Run regression cases
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-macro-tests --output-on-failure --output-junit regression-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: action-macro-regression-${{ github.sha }}
+          path: |
+            build-macro-tests/regression-results.xml
+            build-macro-tests/Testing/Temporary/*.log
+          if-no-files-found: ignore

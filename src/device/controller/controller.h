@@ -7,11 +7,14 @@
 #include <QSize>
 
 #include "inputconvertbase.h"
+#include "uhidkeyboard.h"
+#include "keyboardrouting.h"
 
 class QTcpSocket;
 class Receiver;
 class InputConvertBase;
 class DeviceMsg;
+class ActionMacro;
 class Controller : public QObject
 {
     Q_OBJECT
@@ -19,8 +22,16 @@ public:
     Controller(std::function<qint64(const QByteArray&)> sendData, QString gameScript = "", QObject *parent = Q_NULLPTR);
     virtual ~Controller();
 
+    bool setUhidKeyboardEnabled(bool enabled);
+    bool isUhidKeyboardEnabled() const { return m_uhidEnabled; }
+    void uhidKeyEvent(const QKeyEvent *event);
+    void releaseKeyboard();
+    void shutdownKeyboard();
+    quint8 keyboardLeds() const { return m_keyboard.leds(); }
+
     void postControlMsg(ControlMsg *controlMsg);
     void setCameraMode(bool cameraMode);
+    void setFrameSize(const QSize &size);
     void recvDeviceMsg(DeviceMsg *deviceMsg);
     void test(QRect rc);
 
@@ -30,8 +41,8 @@ public:
     void postGoBack();
     void postGoHome();
     void postGoMenu();
-    void postAppSwitch();
     void postPower();
+    void postAppSwitch();
     void postVolumeUp();
     void postVolumeDown();
     void copy();
@@ -48,13 +59,10 @@ public:
     void cameraZoomIn();
     void cameraZoomOut();
 
-    // for input convert
     void mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize);
     void wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize);
     void keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize);
 
-    // turn the screen on if it was off, press BACK otherwise
-    // If the screen is off, it is turned on only on down
     void postBackOrScreenOn(bool down);
     void requestDeviceClipboard();
     void getDeviceClipboard(bool cut = false);
@@ -62,24 +70,57 @@ public:
     void clipboardPaste();
     void postTextInput(QString &text);
 
+    bool startActionRecording();
+    bool stopActionRecording();
+    bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const;
+    bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR);
+    bool playActionMacro(int repeatCount, int intervalMs);
+    bool playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    QString currentKeymapScript() const { return m_gameScript; }
+    void prepareKeymapEditing() { resetInputState(true); }
+    bool pauseActionMacro();
+    bool resumeActionMacro();
+    bool isActionPaused() const;
+    bool actionMacroInterruptedInput() const;
+    qint64 actionMacroElapsedMs() const;
+    void stopActionPlayback();
+    bool isActionRecording() const;
+    bool isActionPlaying() const;
+    int actionMacroEventCount() const;
+
 signals:
     void grabCursor(bool grab);
+    void actionMacroStateChanged(bool recording, bool playing, int eventCount);
+    void actionMacroProgress(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
+    void actionMacroError(const QString &message);
 
 protected:
     bool event(QEvent *event);
 
 private:
+    bool ensureUhidKeyboard();
+    bool sendMessage(ControlMsg *message);
     bool sendControl(const QByteArray &buffer);
     void postKeyCodeClick(AndroidKeycode keycode);
     void sendPendingResize();
+    void resetInputState(bool preserveKeymap = false);
 
 private:
     QPointer<Receiver> m_receiver;
     QPointer<InputConvertBase> m_inputConvert;
+    QPointer<ActionMacro> m_actionMacro;
     std::function<qint64(const QByteArray&)> m_sendData = Q_NULLPTR;
     QSize m_pendingResize;
     bool m_resizeQueued = false;
     bool m_cameraMode = false;
+    bool m_inputBlocked = false;
+    bool m_macroWasBusy = false;
+    QString m_gameScript;
+    QSize m_frameSize;
+    UhidKeyboard m_keyboard;
+    KeyboardRouting m_keyboardRouting;
+    bool m_uhidEnabled = false;
+    bool m_uhidCreated = false;
 };
 
 #endif // CONTROLLER_H

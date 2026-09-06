@@ -74,12 +74,13 @@ qint32 DeviceMsg::deserialize(QByteArray &byteArray)
             break;
         }
 
-        BufferUtil::read16(buf); // id
+        m_uhidId = BufferUtil::read16(buf);
         quint16 dataLen = BufferUtil::read16(buf);
         if (dataLen > len - 5) {
             ret = 0; // not available
             break;
         }
+        m_uhidOutput = buf.read(dataLen);
         ret = 5 + dataLen;
         break;
     }
