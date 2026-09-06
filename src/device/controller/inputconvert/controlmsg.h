@@ -45,6 +45,9 @@ public:
         CMT_SET_CLIPBOARD,
         CMT_SET_DISPLAY_POWER,
         CMT_ROTATE_DEVICE,
+        CMT_UHID_CREATE = 12,
+        CMT_UHID_INPUT = 13,
+        CMT_UHID_DESTROY = 14,
         CMT_OPEN_HARD_KEYBOARD_SETTINGS = 15,
         CMT_START_APP,
         CMT_RESET_VIDEO,
@@ -85,6 +88,12 @@ public:
     void setStartAppData(const QString &name);
     void setScanFileData(const QString &path);
     void setResizeDisplayData(const QSize &size);
+
+    // Only the fixed keyboard device is exposed; macro files cannot create arbitrary HID devices.
+    static const quint16 UhidKeyboardId = 1;
+    static QByteArray uhidKeyboardDescriptor();
+    void setUhidKeyboardReport(const QByteArray &report) { m_uhidReport = report; }
+    const QByteArray &uhidKeyboardReport() const { return m_uhidReport; }
 
     ControlMsgType type() const { return m_data.type; }
     QByteArray serializeData();
@@ -175,6 +184,7 @@ private:
     };
 
     ControlMsgData m_data;
+    QByteArray m_uhidReport = QByteArray(8, 0);
 };
 
 #endif // CONTROLMSG_H

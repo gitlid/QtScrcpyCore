@@ -127,7 +127,7 @@ bool formatAndVersion()
 {
     const QJsonObject valid = root(QJsonArray{at(0, key())});
     Fixture f;
-    for (const QJsonValue &version : QVector<QJsonValue>{1.5, 2, "1", QJsonValue(), true}) {
+    for (const QJsonValue &version : QVector<QJsonValue>{1.5, 3, "1", QJsonValue(), true}) {
         QJsonObject bad = valid;
         bad["version"] = version;
         if (f.load(bad)) { return false; }

@@ -3,6 +3,7 @@
 
 #include "inputconvertnormal.h"
 #include "controller.h"
+#include "controller.h"
 
 InputConvertNormal::InputConvertNormal(Controller *controller) : InputConvertBase(controller) {}
 
@@ -96,6 +97,10 @@ void InputConvertNormal::keyEvent(const QKeyEvent *from, const QSize &frameSize,
         return;
     }
 
+    if (m_controller && m_controller->isUhidKeyboardEnabled()) {
+        m_controller->uhidKeyEvent(from);
+        return;
+    }
     bool repeat = from->isAutoRepeat();
 
     // action

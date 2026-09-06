@@ -52,6 +52,7 @@ bool ActionMacro::timestamp(const QJsonValue &value, qint64 *result)
 bool ActionMacro::shouldRecord(const ControlMsg &message)
 {
     switch (message.type()) {
+    case ControlMsg::CMT_UHID_INPUT:
     case ControlMsg::CMT_INJECT_KEYCODE:
     case ControlMsg::CMT_INJECT_TEXT:
     case ControlMsg::CMT_INJECT_TOUCH:
@@ -195,6 +196,14 @@ bool ActionMacro::stopRecording()
     return true;
 }
 
+bool ActionMacro::requiresUhidKeyboard() const
+{
+    for (const Event &event : m_events) {
+        if (event.message.value("type").toInt() == ControlMsg::CMT_UHID_INPUT) { return true; }
+    }
+    return false;
+}
+
 bool ActionMacro::save(const QString &fileName, QString *error) const
 {
     if (m_recording || m_playing || m_stopping) { return setError(error, tr("Stop the macro before saving.")); }
@@ -214,7 +223,7 @@ bool ActionMacro::save(const QString &fileName, QString *error) const
     }
     QJsonObject root;
     root["format"] = kFormatName;
-    root["version"] = 1;
+    root["version"] = requiresUhidKeyboard() ? 2 : 1;
     root["createdUtc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     root["screen"] = screen;
     root["durationMs"] = static_cast<double>(m_durationMs);
@@ -244,7 +253,7 @@ bool ActionMacro::load(const QString &fileName, QString *error)
     }
     const QJsonObject root = document.object();
     if (root.value("format").toString() != kFormatName || !root.value("version").isDouble()
-        || root.value("version").toDouble() != 1.0) {
+        || (root.value("version").toDouble() != 1.0 && root.value("version").toDouble() != 2.0)) {
         return setError(error, tr("Unsupported macro format or version."));
     }
     if (!root.value("events").isArray()) { return setError(error, tr("Events must be an array.")); }
@@ -265,6 +274,10 @@ bool ActionMacro::load(const QString &fileName, QString *error)
         QString detail;
         if (!item.value("message").isObject() || !normalize(item.value("message").toObject(), &event.message, &detail)) {
             return setError(error, tr("Event %1 is invalid: %2").arg(index + 1).arg(detail));
+        }
+        if (event.message.value("type").toInt() == ControlMsg::CMT_UHID_INPUT
+            && root.value("version").toInt() < 2) {
+            return setError(error, tr("HID keyboard events require macro format version 2."));
         }
         const QSize screen = screenOf(event.message);
         if (screen.isValid()) {
@@ -384,7 +397,10 @@ void ActionMacro::updateActiveInputs(const QJsonObject &message)
 {
     const int type = message.value("type").toInt(-1);
     const int action = message.value("action").toInt(-1);
-    if (type == ControlMsg::CMT_INJECT_KEYCODE) {
+    if (type == ControlMsg::CMT_UHID_INPUT) {
+        m_activeHidKeyboard = message.value("modifiers").toInt() || !message.value("keys").toArray().isEmpty()
+            ? message : QJsonObject();
+    } else if (type == ControlMsg::CMT_INJECT_KEYCODE) {
         const int keycode = message.value("keycode").toInt();
         if (action == AKEY_EVENT_ACTION_DOWN) { m_activeKeys[keycode] = message; }
         else if (action == AKEY_EVENT_ACTION_UP) { m_activeKeys.remove(keycode); }
@@ -400,6 +416,12 @@ void ActionMacro::updateActiveInputs(const QJsonObject &message)
 QVector<QJsonObject> ActionMacro::takeReleases()
 {
     QVector<QJsonObject> releases;
+    if (!m_activeHidKeyboard.isEmpty()) {
+        m_activeHidKeyboard["modifiers"] = 0;
+        m_activeHidKeyboard["keys"] = QJsonArray();
+        releases.append(m_activeHidKeyboard);
+        m_activeHidKeyboard = QJsonObject();
+    }
     for (QJsonObject key : m_activeKeys) {
         key["action"] = static_cast<int>(AKEY_EVENT_ACTION_UP);
         key["repeat"] = 0;

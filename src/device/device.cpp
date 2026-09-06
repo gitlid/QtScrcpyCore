@@ -155,6 +155,16 @@ void Device::updateScript(QString script)
     }
 }
 
+bool Device::isUhidKeyboardEnabled() const
+{
+    return m_controller && m_controller->isUhidKeyboardEnabled();
+}
+
+void Device::releaseKeyboard()
+{
+    if (m_controller) { m_controller->releaseKeyboard(); }
+}
+
 bool Device::startActionRecording()
 {
     return !isCameraMode() && m_controller && m_controller->startActionRecording();
@@ -361,6 +371,13 @@ void Device::initSignals()
                     }
                 });
 
+                if (m_controller && m_params.uhidKeyboard && !isCameraMode()) {
+                    if (!m_controller->setUhidKeyboardEnabled(true)) {
+                        qWarning("Could not create the UHID keyboard. Reconnect using compatible keyboard mode.");
+                    } else {
+                        qInfo("UHID keyboard requested. Android owns keyboard layout and IME.");
+                    }
+                }
                 // 显示界面时才自动息屏（m_params.display）
                 if (m_params.videoSource == VIDEO_SOURCE_DISPLAY && m_params.closeScreen && m_params.display && m_controller) {
                     m_controller->setDisplayPower(false);
@@ -495,6 +512,7 @@ void Device::disconnectDevice()
     if (m_controller) {
         m_controller->stopActionPlayback();
         m_controller->stopActionRecording();
+        m_controller->shutdownKeyboard();
         m_controller->setFrameSize(QSize());
     }
     m_server->stop();

@@ -84,6 +84,8 @@ set(QSC_DEVICE_SOURCES
     src/device/android/keycodes.h
     src/device/controller/controller.h
     src/device/controller/controller.cpp
+    src/device/controller/uhidkeyboard.h
+    src/device/controller/uhidkeyboard.cpp
     src/device/controller/actionmacro.h
     src/device/controller/actionmacro.cpp
     src/device/controller/bufferutil.h

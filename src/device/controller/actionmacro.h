@@ -30,6 +30,7 @@ public:
     void setCurrentScreen(const QSize &size);
     bool isRecording() const { return m_recording; }
     bool isPlaying() const { return m_playing; }
+    bool requiresUhidKeyboard() const;
     int eventCount() const { return m_events.size(); }
 
 signals:
@@ -67,6 +68,7 @@ private:
     QHash<int, QJsonObject> m_activeKeys;
     QHash<QString, QJsonObject> m_activeTouches;
     QJsonObject m_activeBack;
+    QJsonObject m_activeHidKeyboard;
     QSize m_recordedScreen;
     QSize m_currentScreen;
     qint64 m_durationMs = 0;

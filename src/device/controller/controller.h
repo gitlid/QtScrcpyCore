@@ -7,6 +7,7 @@
 #include <QSize>
 
 #include "inputconvertbase.h"
+#include "uhidkeyboard.h"
 
 class QTcpSocket;
 class Receiver;
@@ -19,6 +20,13 @@ class Controller : public QObject
 public:
     Controller(std::function<qint64(const QByteArray&)> sendData, QString gameScript = "", QObject *parent = Q_NULLPTR);
     virtual ~Controller();
+
+    bool setUhidKeyboardEnabled(bool enabled);
+    bool isUhidKeyboardEnabled() const { return m_uhidEnabled; }
+    void uhidKeyEvent(const QKeyEvent *event);
+    void releaseKeyboard();
+    void shutdownKeyboard();
+    quint8 keyboardLeds() const { return m_keyboard.leds(); }
 
     void postControlMsg(ControlMsg *controlMsg);
     void setCameraMode(bool cameraMode);
@@ -84,6 +92,8 @@ protected:
     bool event(QEvent *event);
 
 private:
+    bool ensureUhidKeyboard();
+    bool sendMessage(ControlMsg *message);
     bool sendControl(const QByteArray &buffer);
     void postKeyCodeClick(AndroidKeycode keycode);
     void sendPendingResize();
@@ -101,6 +111,9 @@ private:
     bool m_macroWasBusy = false;
     QString m_gameScript;
     QSize m_frameSize;
+    UhidKeyboard m_keyboard;
+    bool m_uhidEnabled = false;
+    bool m_uhidCreated = false;
 };
 
 #endif // CONTROLLER_H

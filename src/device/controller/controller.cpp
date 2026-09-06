@@ -4,6 +4,7 @@
 
 #include "actionmacro.h"
 #include "controller.h"
+#include "devicemsg.h"
 #include "controlmsg.h"
 #include "inputconvertgame.h"
 #include "receiver.h"
@@ -19,7 +20,7 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
     m_actionMacro = new ActionMacro([this](ControlMsg *message) {
         // Synchronous enqueue into the control socket. Macro events must not
         // survive Stop in Qt's posted-event queue.
-        const bool sent = sendControl(message->serializeData());
+        const bool sent = sendMessage(message);
         delete message;
         if (!sent && m_actionMacro) {
             m_actionMacro->abort(tr("The device control connection failed. Playback has stopped."));
@@ -30,7 +31,10 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
         const bool busy = recording || playing;
         const bool finished = m_macroWasBusy && !busy;
         m_macroWasBusy = busy;
-        if (finished) { resetInputState(); }
+        if (finished) {
+            resetInputState();
+            if (!m_uhidEnabled) { shutdownKeyboard(); }
+        }
         emit actionMacroStateChanged(recording, playing, count);
     });
     connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
@@ -39,7 +43,64 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
     updateScript(gameScript);
 }
 
-Controller::~Controller() {}
+Controller::~Controller() { shutdownKeyboard(); }
+
+bool Controller::ensureUhidKeyboard()
+{
+    if (m_cameraMode) { return false; }
+    if (m_uhidCreated) { return true; }
+    ControlMsg create(ControlMsg::CMT_UHID_CREATE);
+    m_uhidCreated = sendControl(create.serializeData());
+    return m_uhidCreated;
+}
+
+bool Controller::setUhidKeyboardEnabled(bool enabled)
+{
+    if (isActionRecording() || isActionPlaying() || m_cameraMode) { return false; }
+    m_uhidEnabled = enabled;
+    if (enabled && !ensureUhidKeyboard()) { return false; }
+    if (!enabled) { shutdownKeyboard(); }
+    return true;
+}
+
+bool Controller::sendMessage(ControlMsg *message)
+{
+    if (message->type() == ControlMsg::CMT_UHID_INPUT && !ensureUhidKeyboard()) { return false; }
+    return sendControl(message->serializeData());
+}
+
+void Controller::uhidKeyEvent(const QKeyEvent *event)
+{
+    if (!event || !m_uhidEnabled || m_inputBlocked || isActionPlaying()) { return; }
+    const QByteArray report = m_keyboard.update(*event);
+    if (report.isEmpty()) { return; }
+    auto *message = new ControlMsg(ControlMsg::CMT_UHID_INPUT);
+    message->setUhidKeyboardReport(report);
+    postControlMsg(message);
+}
+
+void Controller::releaseKeyboard()
+{
+    if (isActionPlaying()) { return; } // Playback owns its keys until Stop.
+    QCoreApplication::sendPostedEvents(this, ControlMsg::Control);
+    m_keyboard.clear();
+    if (!m_uhidCreated) { return; }
+    ControlMsg release(ControlMsg::CMT_UHID_INPUT);
+    if (sendMessage(&release) && m_actionMacro) { m_actionMacro->record(release); }
+}
+
+void Controller::shutdownKeyboard()
+{
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    m_keyboard.clear();
+    if (!m_uhidCreated) { return; }
+    ControlMsg release(ControlMsg::CMT_UHID_INPUT);
+    sendControl(release.serializeData());
+    ControlMsg destroy(ControlMsg::CMT_UHID_DESTROY);
+    sendControl(destroy.serializeData());
+    m_uhidCreated = false;
+}
+
 
 void Controller::setFrameSize(const QSize &size)
 {
@@ -54,6 +115,7 @@ void Controller::resetInputState(bool preserveKeymap)
     const bool gameEnabled = preserveKeymap && isCurrentCustomKeymap();
     QCoreApplication::removePostedEvents(this, ControlMsg::Control);
     if (m_actionMacro) { m_actionMacro->releaseInputs(); }
+    m_keyboard.clear();
     // Destroy the old mapper: its child timers and context-bound delayed
     // callbacks must not regenerate held touches after an emergency stop.
     updateScript(m_gameScript);
@@ -99,6 +161,10 @@ void Controller::recvDeviceMsg(DeviceMsg *deviceMsg)
         return;
     }
 
+    if (deviceMsg && deviceMsg->type() == DeviceMsg::DMT_UHID_OUTPUT
+        && deviceMsg->uhidId() == ControlMsg::UhidKeyboardId && deviceMsg->uhidOutput().size() == 1) {
+        m_keyboard.setLeds(quint8(deviceMsg->uhidOutput().at(0)));
+    }
     m_receiver->recvDeviceMsg(deviceMsg);
 }
 
@@ -112,6 +178,7 @@ void Controller::test(QRect rc)
 
 void Controller::updateScript(QString gameScript)
 {
+    releaseKeyboard();
     m_gameScript = gameScript;
     if (m_inputConvert) {
         delete m_inputConvert;
@@ -341,7 +408,13 @@ bool Controller::playActionMacro(int repeatCount, int intervalMs)
     if (!m_actionMacro || m_cameraMode || m_actionMacro->isRecording()
         || m_actionMacro->isPlaying() || !m_frameSize.isValid()) { return false; }
     resetInputState();
-    return m_actionMacro->play(repeatCount, intervalMs);
+    if (m_actionMacro->requiresUhidKeyboard() && !ensureUhidKeyboard()) {
+        emit actionMacroError(tr("Cannot create the UHID keyboard for this macro."));
+        return false;
+    }
+    const bool playing = m_actionMacro->play(repeatCount, intervalMs);
+    if (!playing && !m_uhidEnabled) { shutdownKeyboard(); }
+    return playing;
 }
 
 void Controller::stopActionPlayback()
@@ -416,7 +489,9 @@ void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const Q
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);
     if (m_inputConvert) {
+        const bool wasGameMap = isCurrentCustomKeymap();
         m_inputConvert->keyEvent(from, frameSize, showSize);
+        if (wasGameMap != isCurrentCustomKeymap()) { releaseKeyboard(); }
     }
 }
 
@@ -425,7 +500,7 @@ bool Controller::event(QEvent *event)
     if (event && static_cast<ControlMsg::Type>(event->type()) == ControlMsg::Control) {
         ControlMsg *controlMsg = dynamic_cast<ControlMsg *>(event);
         if (controlMsg && !m_inputBlocked && !(m_actionMacro && m_actionMacro->isPlaying())) {
-            if (sendControl(controlMsg->serializeData())) {
+            if (sendMessage(controlMsg)) {
                 if (m_actionMacro) { m_actionMacro->record(*controlMsg); }
             } else if (m_actionMacro && m_actionMacro->isRecording()) {
                 m_actionMacro->abort(tr("The device control connection failed. Recording has stopped."));

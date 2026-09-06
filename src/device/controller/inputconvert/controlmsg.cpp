@@ -1,5 +1,7 @@
 #include <QDebug>
 #include <QJsonValue>
+#include <QJsonArray>
+#include <QSet>
 
 #include <cmath>
 
@@ -84,6 +86,7 @@ bool positionFromJson(const QJsonValue &value, QRect *position, QString *error)
 QString messageTypeName(ControlMsg::ControlMsgType type)
 {
     switch (type) {
+    case ControlMsg::CMT_UHID_INPUT: return "hid_keyboard";
     case ControlMsg::CMT_INJECT_KEYCODE: return "key";
     case ControlMsg::CMT_INJECT_TEXT: return "text";
     case ControlMsg::CMT_INJECT_TOUCH: return "touch";
@@ -253,6 +256,14 @@ void ControlMsg::setResizeDisplayData(const QSize &size)
     m_data.resizeDisplay.height = static_cast<quint16>(qBound(1, size.height(), 0xffff));
 }
 
+QByteArray ControlMsg::uhidKeyboardDescriptor()
+{
+    // Standard boot keyboard: modifiers, six keys, and five output LED bits.
+    return QByteArray::fromHex("05010906a101050719e029e715002501750195088102950175088101"
+                               "9505750105081901290591029501750391019506750815002565"
+                               "0507190029658100c0");
+}
+
 void ControlMsg::writePosition(QBuffer &buffer, const QRect &value)
 {
     BufferUtil::write32(buffer, value.left());
@@ -291,6 +302,27 @@ QByteArray ControlMsg::serializeData()
     buffer.putChar(m_data.type);
 
     switch (m_data.type) {
+    case CMT_UHID_CREATE: {
+        BufferUtil::write16(buffer, UhidKeyboardId);
+        BufferUtil::write16(buffer, 0); // vendor
+        BufferUtil::write16(buffer, 0); // product
+        const QByteArray name("QtScrcpy keyboard");
+        buffer.putChar(char(name.size()));
+        buffer.write(name);
+        const QByteArray descriptor = uhidKeyboardDescriptor();
+        BufferUtil::write16(buffer, quint16(descriptor.size()));
+        buffer.write(descriptor);
+        break;
+    }
+    case CMT_UHID_INPUT:
+        if (m_uhidReport.size() != 8) { return {}; }
+        BufferUtil::write16(buffer, UhidKeyboardId);
+        BufferUtil::write16(buffer, 8);
+        buffer.write(m_uhidReport);
+        break;
+    case CMT_UHID_DESTROY:
+        BufferUtil::write16(buffer, UhidKeyboardId);
+        break;
     case CMT_INJECT_KEYCODE:
         buffer.putChar(m_data.injectKeycode.action);
         BufferUtil::write32(buffer, m_data.injectKeycode.keycode);
@@ -389,6 +421,15 @@ QJsonObject ControlMsg::toJson() const
     json["kind"] = messageTypeName(m_data.type);
 
     switch (m_data.type) {
+    case CMT_UHID_INPUT: {
+        json["modifiers"] = m_uhidReport.isEmpty() ? 0 : quint8(m_uhidReport.at(0));
+        QJsonArray keys;
+        for (int i = 2; i < m_uhidReport.size(); ++i) {
+            if (m_uhidReport.at(i)) { keys.append(quint8(m_uhidReport.at(i))); }
+        }
+        json["keys"] = keys;
+        break;
+    }
     case CMT_INJECT_KEYCODE:
         json["action"] = static_cast<int>(m_data.injectKeycode.action);
         json["keycode"] = static_cast<int>(m_data.injectKeycode.keycode);
@@ -460,6 +501,33 @@ ControlMsg *ControlMsg::fromJson(const QJsonObject &json, QString *error)
     QRect position;
 
     switch (type) {
+    case CMT_UHID_INPUT: {
+        const QJsonValue value = json.value("keys");
+        if (!readInteger(json, "modifiers", 0, 255, &first, error)
+            || !value.isArray() || value.toArray().size() > 6) {
+            delete message;
+            failJson(error, "HID keyboard requires modifiers 0..255 and up to six key usages");
+            return Q_NULLPTR;
+        }
+        const QJsonArray keys = value.toArray();
+        QByteArray report(8, 0);
+        report[0] = char(first);
+        QSet<int> seen;
+        const bool rollover = keys.size() == 6 && keys.at(0).toDouble() == 1.0;
+        for (int i = 0; i < keys.size(); ++i) {
+            const double key = keys.at(i).toDouble(-1);
+            if (!keys.at(i).isDouble() || !std::isfinite(key) || std::floor(key) != key
+                || (rollover ? key != 1 : (key < 4 || key > 101 || seen.contains(int(key))))) {
+                delete message;
+                failJson(error, "Invalid or duplicate HID keyboard usage");
+                return Q_NULLPTR;
+            }
+            seen.insert(int(key));
+            report[2 + i] = char(key);
+        }
+        message->setUhidKeyboardReport(report);
+        break;
+    }
     case CMT_INJECT_KEYCODE:
         if (!readInteger(json, "action", 0, 1, &first, error)
             || !readInteger(json, "keycode", 0, 0x7fffffff, &second, error)

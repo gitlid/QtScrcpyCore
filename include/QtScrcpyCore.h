@@ -151,6 +151,8 @@ public:
     virtual void updateScript(QString script) = 0;
     virtual bool isCurrentCustomKeymap() = 0;
 
+    virtual bool isUhidKeyboardEnabled() const = 0;
+    virtual void releaseKeyboard() = 0;
     virtual bool startActionRecording() = 0;
     virtual bool stopActionRecording() = 0;
     virtual bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const = 0;

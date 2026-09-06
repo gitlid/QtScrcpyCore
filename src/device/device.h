@@ -82,6 +82,8 @@ public:
     void updateScript(QString script) override;
     bool isCurrentCustomKeymap() override;
 
+    bool isUhidKeyboardEnabled() const override;
+    void releaseKeyboard() override;
     bool startActionRecording() override;
     bool stopActionRecording() override;
     bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const override;
