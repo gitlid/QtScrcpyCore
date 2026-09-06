@@ -2,6 +2,7 @@
 #define CONTROLMSG_H
 
 #include <QBuffer>
+#include <QJsonObject>
 #include <QRect>
 #include <QString>
 
@@ -87,6 +88,11 @@ public:
 
     ControlMsgType type() const { return m_data.type; }
     QByteArray serializeData();
+
+    // Version-independent action macro representation. The JSON stores
+    // semantic fields rather than the private scrcpy wire bytes.
+    QJsonObject toJson() const;
+    static ControlMsg *fromJson(const QJsonObject &json, QString *error = Q_NULLPTR);
 
 private:
     void writePosition(QBuffer &buffer, const QRect &value);

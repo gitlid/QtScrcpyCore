@@ -2,6 +2,7 @@
 #include <QClipboard>
 #include <QTimer>
 
+#include "actionmacro.h"
 #include "controller.h"
 #include "controlmsg.h"
 #include "inputconvertgame.h"
@@ -14,6 +15,13 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
 {
     m_receiver = new Receiver(this);
     Q_ASSERT(m_receiver);
+
+    m_actionMacro = new ActionMacro([this](ControlMsg *message) {
+        postControlMsg(message);
+    }, this);
+    connect(m_actionMacro, &ActionMacro::stateChanged, this, &Controller::actionMacroStateChanged);
+    connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
+    connect(m_actionMacro, &ActionMacro::errorOccurred, this, &Controller::actionMacroError);
 
     updateScript(gameScript);
 }
@@ -36,6 +44,10 @@ void Controller::postControlMsg(ControlMsg *controlMsg)
             delete controlMsg;
             return;
         }
+    }
+
+    if (m_actionMacro) {
+        m_actionMacro->record(*controlMsg);
     }
 
     QCoreApplication::postEvent(this, controlMsg);
@@ -263,6 +275,53 @@ void Controller::postTextInput(QString &text)
     }
     controlMsg->setInjectTextMsgData(text);
     postControlMsg(controlMsg);
+}
+
+bool Controller::startActionRecording()
+{
+    return m_actionMacro && !m_cameraMode && m_actionMacro->startRecording();
+}
+
+bool Controller::stopActionRecording()
+{
+    return m_actionMacro && m_actionMacro->stopRecording();
+}
+
+bool Controller::saveActionMacro(const QString &fileName, QString *error) const
+{
+    return m_actionMacro && m_actionMacro->save(fileName, error);
+}
+
+bool Controller::loadActionMacro(const QString &fileName, QString *error)
+{
+    return m_actionMacro && !m_cameraMode && m_actionMacro->load(fileName, error);
+}
+
+bool Controller::playActionMacro(int repeatCount, int intervalMs)
+{
+    return m_actionMacro && !m_cameraMode && m_actionMacro->play(repeatCount, intervalMs);
+}
+
+void Controller::stopActionPlayback()
+{
+    if (m_actionMacro) {
+        m_actionMacro->stopPlayback();
+    }
+}
+
+bool Controller::isActionRecording() const
+{
+    return m_actionMacro && m_actionMacro->isRecording();
+}
+
+bool Controller::isActionPlaying() const
+{
+    return m_actionMacro && m_actionMacro->isPlaying();
+}
+
+int Controller::actionMacroEventCount() const
+{
+    return m_actionMacro ? m_actionMacro->eventCount() : 0;
 }
 
 void Controller::setDisplayPower(bool on)

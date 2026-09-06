@@ -82,6 +82,16 @@ public:
     void updateScript(QString script) override;
     bool isCurrentCustomKeymap() override;
 
+    bool startActionRecording() override;
+    bool stopActionRecording() override;
+    bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const override;
+    bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR) override;
+    bool playActionMacro(int repeatCount = 1, int intervalMs = 0) override;
+    void stopActionPlayback() override;
+    bool isActionRecording() const override;
+    bool isActionPlaying() const override;
+    int actionMacroEventCount() const override;
+
 private:
     void initSignals();
     bool saveFrame(int width, int height, uint8_t* dataRGB32);

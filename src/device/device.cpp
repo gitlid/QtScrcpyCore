@@ -155,6 +155,53 @@ void Device::updateScript(QString script)
     }
 }
 
+bool Device::startActionRecording()
+{
+    return !isCameraMode() && m_controller && m_controller->startActionRecording();
+}
+
+bool Device::stopActionRecording()
+{
+    return m_controller && m_controller->stopActionRecording();
+}
+
+bool Device::saveActionMacro(const QString &fileName, QString *error) const
+{
+    return m_controller && m_controller->saveActionMacro(fileName, error);
+}
+
+bool Device::loadActionMacro(const QString &fileName, QString *error)
+{
+    return !isCameraMode() && m_controller && m_controller->loadActionMacro(fileName, error);
+}
+
+bool Device::playActionMacro(int repeatCount, int intervalMs)
+{
+    return !isCameraMode() && m_controller && m_controller->playActionMacro(repeatCount, intervalMs);
+}
+
+void Device::stopActionPlayback()
+{
+    if (m_controller) {
+        m_controller->stopActionPlayback();
+    }
+}
+
+bool Device::isActionRecording() const
+{
+    return m_controller && m_controller->isActionRecording();
+}
+
+bool Device::isActionPlaying() const
+{
+    return m_controller && m_controller->isActionPlaying();
+}
+
+int Device::actionMacroEventCount() const
+{
+    return m_controller ? m_controller->actionMacroEventCount() : 0;
+}
+
 void Device::screenshot()
 {
     if (!m_decoder) {
@@ -227,6 +274,9 @@ void Device::initSignals()
                 item->grabCursor(grab);
             }
         });
+        connect(m_controller, &Controller::actionMacroStateChanged, this, &IDevice::actionMacroStateChanged);
+        connect(m_controller, &Controller::actionMacroProgress, this, &IDevice::actionMacroProgress);
+        connect(m_controller, &Controller::actionMacroError, this, &IDevice::actionMacroError);
     }
     if (m_fileHandler) {
         connect(m_fileHandler, &FileHandler::fileHandlerResult, this, [this](FileHandler::FILE_HANDLER_RESULT processResult, bool isApk) {
@@ -439,6 +489,10 @@ void Device::disconnectDevice()
 {
     if (!m_server) {
         return;
+    }
+    if (m_controller) {
+        m_controller->stopActionPlayback();
+        m_controller->stopActionRecording();
     }
     m_server->stop();
     m_server = Q_NULLPTR;

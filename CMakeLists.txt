@@ -84,6 +84,8 @@ set(QSC_DEVICE_SOURCES
     src/device/android/keycodes.h
     src/device/controller/controller.h
     src/device/controller/controller.cpp
+    src/device/controller/actionmacro.h
+    src/device/controller/actionmacro.cpp
     src/device/controller/bufferutil.h
     src/device/controller/bufferutil.cpp
     src/device/controller/inputconvert/inputconvertbase.h
@@ -162,6 +164,31 @@ target_include_directories(${QSC_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DI
 target_include_directories(${QSC_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/device/ui)
 target_include_directories(${QSC_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/device/recorder)
 target_include_directories(${QSC_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/devicemanage)
+
+option(QSC_BUILD_ACTION_MACRO_TESTS "Build action macro unit tests" ON)
+if(QSC_BUILD_ACTION_MACRO_TESTS)
+    enable_testing()
+    add_executable(qsc_actionmacro_tests
+        tests/actionmacro_test.cpp
+        src/common/qscrcpyevent.h
+        src/device/android/input.h
+        src/device/android/keycodes.h
+        src/device/controller/actionmacro.h
+        src/device/controller/actionmacro.cpp
+        src/device/controller/bufferutil.h
+        src/device/controller/bufferutil.cpp
+        src/device/controller/inputconvert/controlmsg.h
+        src/device/controller/inputconvert/controlmsg.cpp
+    )
+    target_include_directories(qsc_actionmacro_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/device/android
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/device/controller
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/device/controller/inputconvert
+    )
+    target_link_libraries(qsc_actionmacro_tests PRIVATE Qt${QT_DESIRED_VERSION}::Core)
+    add_test(NAME qsc_actionmacro_tests COMMAND qsc_actionmacro_tests)
+endif()
 
 #
 # plantform deps

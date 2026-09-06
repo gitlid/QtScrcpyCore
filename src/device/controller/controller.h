@@ -12,6 +12,7 @@ class QTcpSocket;
 class Receiver;
 class InputConvertBase;
 class DeviceMsg;
+class ActionMacro;
 class Controller : public QObject
 {
     Q_OBJECT
@@ -62,8 +63,21 @@ public:
     void clipboardPaste();
     void postTextInput(QString &text);
 
+    bool startActionRecording();
+    bool stopActionRecording();
+    bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const;
+    bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR);
+    bool playActionMacro(int repeatCount, int intervalMs);
+    void stopActionPlayback();
+    bool isActionRecording() const;
+    bool isActionPlaying() const;
+    int actionMacroEventCount() const;
+
 signals:
     void grabCursor(bool grab);
+    void actionMacroStateChanged(bool recording, bool playing, int eventCount);
+    void actionMacroProgress(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
+    void actionMacroError(const QString &message);
 
 protected:
     bool event(QEvent *event);
@@ -76,6 +90,7 @@ private:
 private:
     QPointer<Receiver> m_receiver;
     QPointer<InputConvertBase> m_inputConvert;
+    QPointer<ActionMacro> m_actionMacro;
     std::function<qint64(const QByteArray&)> m_sendData = Q_NULLPTR;
     QSize m_pendingResize;
     bool m_resizeQueued = false;

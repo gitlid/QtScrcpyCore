@@ -96,6 +96,9 @@ public:
 signals:
     void deviceConnected(bool success, const QString& serial, const QString& deviceName, const QSize& size);
     void deviceDisconnected(QString serial);
+    void actionMacroStateChanged(bool recording, bool playing, int eventCount);
+    void actionMacroProgress(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
+    void actionMacroError(const QString &message);
 
 public:
     virtual void setUserData(void* data) = 0;
@@ -147,6 +150,17 @@ public:
 
     virtual void updateScript(QString script) = 0;
     virtual bool isCurrentCustomKeymap() = 0;
+
+    virtual bool startActionRecording() = 0;
+    virtual bool stopActionRecording() = 0;
+    virtual bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const = 0;
+    virtual bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR) = 0;
+    // repeatCount == 0 means repeat until stopActionPlayback() is called.
+    virtual bool playActionMacro(int repeatCount = 1, int intervalMs = 0) = 0;
+    virtual void stopActionPlayback() = 0;
+    virtual bool isActionRecording() const = 0;
+    virtual bool isActionPlaying() const = 0;
+    virtual int actionMacroEventCount() const = 0;
 };
 
 class IDeviceManage : public QObject {
