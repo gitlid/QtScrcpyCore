@@ -72,7 +72,21 @@ bool Controller::sendMessage(ControlMsg *message)
 void Controller::uhidKeyEvent(const QKeyEvent *event)
 {
     if (!event || !m_uhidEnabled || m_inputBlocked || isActionPlaying()) { return; }
-    const QByteArray report = m_keyboard.update(*event);
+    Qt::KeyboardModifiers modifiers = event->modifiers();
+    InputConvertGame *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    if (game) {
+        const Qt::KeyboardModifier flags[] = {Qt::ControlModifier, Qt::ShiftModifier, Qt::AltModifier, Qt::MetaModifier};
+        const int keys[] = {Qt::Key_Control, Qt::Key_Shift, Qt::Key_Alt, Qt::Key_Meta};
+        for (int i = 0; i < 4; ++i) {
+            if (game->handlesKeyboardKey(keys[i])) { modifiers &= ~flags[i]; }
+        }
+    }
+    // UhidKeyboard recovers held modifiers from Qt flags. Do not resurrect a
+    // modifier which belongs exclusively to a touch mapping or mode switch.
+    QKeyEvent filtered(event->type(), event->key(), modifiers, event->nativeScanCode(),
+                       event->nativeVirtualKey(), event->nativeModifiers(), event->text(),
+                       event->isAutoRepeat(), ushort(event->count()));
+    const QByteArray report = m_keyboard.update(filtered);
     if (report.isEmpty()) { return; }
     auto *message = new ControlMsg(ControlMsg::CMT_UHID_INPUT);
     message->setUhidKeyboardReport(report);
