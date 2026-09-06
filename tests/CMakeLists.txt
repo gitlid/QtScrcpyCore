@@ -47,3 +47,26 @@ foreach(case_name IN ITEMS speed_bounds speed_eight pause_wait pause_interval ti
     add_test(NAME execution_${case_name} COMMAND macroexecution_tests ${case_name})
     set_tests_properties(execution_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()
+
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
+add_executable(mousemapping_tests mousemapping_test.cpp
+    ${ROOT}/src/device/controller/controller.cpp ${ROOT}/src/device/controller/controller.h
+    ${ROOT}/src/device/controller/actionmacro.cpp ${ROOT}/src/device/controller/actionmacro.h
+    ${ROOT}/src/device/controller/bufferutil.cpp
+    ${ROOT}/src/device/controller/inputconvert/controlmsg.cpp
+    ${ROOT}/src/device/controller/uhidkeyboard.cpp
+    ${ROOT}/src/device/controller/inputconvert/inputconvertbase.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertbase.h
+    ${ROOT}/src/device/controller/inputconvert/inputconvertnormal.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertnormal.h
+    ${ROOT}/src/device/controller/inputconvert/inputconvertgame.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertgame.h
+    ${ROOT}/src/device/controller/inputconvert/keymap/keymap.cpp ${ROOT}/src/device/controller/inputconvert/keymap/keymap.h
+    ${ROOT}/src/device/controller/receiver/receiver.cpp ${ROOT}/src/device/controller/receiver/receiver.h
+    ${ROOT}/src/device/controller/receiver/devicemsg.cpp)
+target_include_directories(mousemapping_tests PRIVATE
+    ${ROOT}/src/common ${ROOT}/src/device/android ${ROOT}/src/device/controller
+    ${ROOT}/src/device/controller/inputconvert ${ROOT}/src/device/controller/inputconvert/keymap
+    ${ROOT}/src/device/controller/receiver ${ROOT}/src/device/server)
+target_link_libraries(mousemapping_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+foreach(case_name IN ITEMS left right middle back forward aliases drag multi twice android joystick namespaces move_no_leak toggle simultaneous macro pause toggle_cancels_delayed uhid_priority)
+    add_test(NAME mouse_${case_name} COMMAND mousemapping_tests ${case_name})
+    set_tests_properties(mouse_${case_name} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endforeach()

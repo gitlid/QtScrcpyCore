@@ -494,7 +494,12 @@ void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, con
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);
     if (m_inputConvert) {
+        const bool wasGameMap = isCurrentCustomKeymap();
         m_inputConvert->mouseEvent(from, frameSize, showSize);
+        if (wasGameMap != isCurrentCustomKeymap()) {
+            if (isCurrentCustomKeymap()) { releaseKeyboard(); }
+            else { resetInputState(); }
+        }
     }
 }
 
@@ -514,7 +519,10 @@ void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const Q
     if (m_inputConvert) {
         const bool wasGameMap = isCurrentCustomKeymap();
         m_inputConvert->keyEvent(from, frameSize, showSize);
-        if (wasGameMap != isCurrentCustomKeymap()) { releaseKeyboard(); }
+        if (wasGameMap != isCurrentCustomKeymap()) {
+            if (isCurrentCustomKeymap()) { releaseKeyboard(); }
+            else { resetInputState(); }
+        }
     }
 }
 

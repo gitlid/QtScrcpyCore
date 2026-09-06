@@ -443,13 +443,11 @@ QPair<KeyMap::ActionType, int> KeyMap::getItemKey(const QJsonObject &node, const
     QString value = getItemString(node, name);
     int key = m_metaEnumKey.keyToValue(value.toStdString().c_str());
     int btn = m_metaEnumMouseButtons.keyToValue(value.toStdString().c_str());
-    if (key == -1 && btn == -1) {
-        return { AT_INVALID, -1 };
-    } else if (key != -1) {
-        return { AT_KEY, key };
-    } else {
+    if (key != -1 && key != Qt::Key_unknown) { return { AT_KEY, key }; }
+    if (btn > 0 && (btn & (btn - 1)) == 0 && btn <= int(Qt::MaxMouseButton)) {
         return { AT_MOUSE, btn };
     }
+    return { AT_INVALID, -1 };
 }
 
 KeyMap::KeyMapType KeyMap::getItemKeyMapType(const QJsonObject &node, const QString &name)
