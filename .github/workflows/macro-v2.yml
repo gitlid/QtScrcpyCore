@@ -2,13 +2,13 @@ name: Macro V2 Regression
 on:
   push:
     branches: [feature/keymap-macro-v2]
-    paths: ['src/**', 'include/**', 'tests/**', 'ci/apply-mouse-bindings.py', '.github/workflows/macro-v2.yml']
+    paths: ['src/**', 'include/**', 'tests/**', '.github/workflows/macro-v2.yml']
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: macro-v2-core
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   regression:
     if: github.repository == 'gitlid/QtScrcpyCore' && github.ref == 'refs/heads/feature/keymap-macro-v2'
@@ -17,39 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feature/keymap-macro-v2
-      - name: Apply checked mouse mapping changes
-        run: |
-          python3 ci/apply-mouse-bindings.py
-          if ! grep -q 'add_executable(mousemapping_tests' tests/CMakeLists.txt; then
-            cat >> tests/CMakeLists.txt <<'CMAKE'
-
-          find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
-          add_executable(mousemapping_tests mousemapping_test.cpp
-              ${ROOT}/src/device/controller/controller.cpp ${ROOT}/src/device/controller/controller.h
-              ${ROOT}/src/device/controller/actionmacro.cpp ${ROOT}/src/device/controller/actionmacro.h
-              ${ROOT}/src/device/controller/bufferutil.cpp
-              ${ROOT}/src/device/controller/inputconvert/controlmsg.cpp
-              ${ROOT}/src/device/controller/uhidkeyboard.cpp
-              ${ROOT}/src/device/controller/inputconvert/inputconvertbase.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertbase.h
-              ${ROOT}/src/device/controller/inputconvert/inputconvertnormal.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertnormal.h
-              ${ROOT}/src/device/controller/inputconvert/inputconvertgame.cpp ${ROOT}/src/device/controller/inputconvert/inputconvertgame.h
-              ${ROOT}/src/device/controller/inputconvert/keymap/keymap.cpp ${ROOT}/src/device/controller/inputconvert/keymap/keymap.h
-              ${ROOT}/src/device/controller/receiver/receiver.cpp ${ROOT}/src/device/controller/receiver/receiver.h
-              ${ROOT}/src/device/controller/receiver/devicemsg.cpp)
-          target_include_directories(mousemapping_tests PRIVATE
-              ${ROOT}/src/common ${ROOT}/src/device/android ${ROOT}/src/device/controller
-              ${ROOT}/src/device/controller/inputconvert ${ROOT}/src/device/controller/inputconvert/keymap
-              ${ROOT}/src/device/controller/receiver ${ROOT}/src/device/server)
-          target_link_libraries(mousemapping_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
-          foreach(case_name IN ITEMS left right middle back forward aliases drag multi twice android joystick namespaces move_no_leak toggle simultaneous macro pause toggle_cancels_delayed uhid_priority)
-              add_test(NAME mouse_${case_name} COMMAND mousemapping_tests ${case_name})
-              set_tests_properties(mouse_${case_name} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-          endforeach()
-          CMAKE
-          fi
-          git diff --check
-      - name: Install Qt and build regression tests
+          persist-credentials: false
+      - name: Install Qt and build committed regression sources
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qtbase5-dev ninja-build
@@ -59,15 +28,11 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-v2 --output-on-failure --output-junit results.xml
-      - name: Commit verified source changes only to feature branch
+          QT_QPA_PLATFORM: offscreen
         run: |
-          git add src/device/controller/controller.cpp src/device/controller/inputconvert/inputconvertgame.cpp src/device/controller/inputconvert/keymap/keymap.cpp tests/CMakeLists.txt
-          if ! git diff --cached --quiet; then
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat: map mouse buttons and side keys to typed actions with isolated touch ownership'
-            git push origin HEAD:refs/heads/feature/keymap-macro-v2
-          fi
-          git rev-parse HEAD | tee tested-commit.txt
+          ctest --test-dir build-v2 --output-on-failure --output-junit results.xml
+          git rev-parse HEAD > tested-commit.txt
+          git diff --exit-code
       - uses: actions/upload-artifact@v4
         if: always()
         with:

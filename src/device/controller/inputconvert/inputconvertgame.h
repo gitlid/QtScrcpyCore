@@ -21,8 +21,9 @@ public:
     virtual bool isCurrentCustomKeymap();
 
     void loadKeyMap(const QString &json);
+    bool handlesKeyboardKey(int key);
     // Restore only the enabled flag after clearing all held/delayed inputs.
-    void restoreGameMap(bool active) { m_gameMap = active; }
+    void restoreGameMap(bool active);
 
 protected:
     void updateSize(const QSize &frameSize, const QSize &showSize);
@@ -34,27 +35,15 @@ protected:
     QPointF calcFrameAbsolutePos(QPointF relativePos);
     QPointF calcScreenAbsolutePos(QPointF relativePos);
 
-    // multi touch id
     int attachTouchID(int key);
     void detachTouchID(int key);
     int getTouchID(int key);
-
-    // steer wheel
     void processSteerWheel(const KeyMap::KeyMapNode &node, const QKeyEvent *from);
-
-    // click
     void processKeyClick(const QPointF &clickPos, bool clickTwice, bool switchMap, const QKeyEvent *from);
-
-    // click mutil
     void processKeyClickMulti(const KeyMap::DelayClickNode *nodes, const int count, const QKeyEvent *from);
-
-    // drag
     void processKeyDrag(const QPointF &startPos, QPointF endPos, quint32 startDelay, float dragSpeed, const QKeyEvent *from);
-
-    // android key
     void processAndroidKey(AndroidKeycode androidKey, const QKeyEvent *from);
 
-    // mouse
     bool processMouseClick(const QMouseEvent *from);
     bool processMouseMove(const QMouseEvent *from);
     void moveCursorTo(const QMouseEvent *from, const QPoint &localPosPixel);
@@ -83,23 +72,19 @@ private:
     QSize m_frameSize;
     QSize m_showSize;
     bool m_gameMap = false;
+    bool m_mouseCaptured = false;
     bool m_needBackMouseMove = false;
     int m_multiTouchID[MULTI_TOUCH_MAX_NUM] = { 0 };
     KeyMap m_keyMap;
-
     bool m_processMouseMove = true;
 
-    // steer wheel
     struct
     {
-        // the first key pressed
         int touchKey = Qt::Key_unknown;
         bool pressedUp = false;
+        bool pressedRight = false;
         bool pressedDown = false;
         bool pressedLeft = false;
-        bool pressedRight = false;
-
-        // for delay
         struct {
             QPointF currentPos;
             QTimer* timer = nullptr;
@@ -109,7 +94,6 @@ private:
         } delayData;
     } m_ctrlSteerWheel;
 
-    // mouse move
     struct
     {
         QPointF lastConverPos;
@@ -120,7 +104,6 @@ private:
         int ignoreCount = 0;
     } m_ctrlMouseMove;
 
-    // for drag delay
     struct {
         QPointF currentPos;
         QTimer* timer = nullptr;

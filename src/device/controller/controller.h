@@ -8,6 +8,7 @@
 
 #include "inputconvertbase.h"
 #include "uhidkeyboard.h"
+#include "keyboardrouting.h"
 
 class QTcpSocket;
 class Receiver;
@@ -40,8 +41,8 @@ public:
     void postGoBack();
     void postGoHome();
     void postGoMenu();
-    void postAppSwitch();
     void postPower();
+    void postAppSwitch();
     void postVolumeUp();
     void postVolumeDown();
     void copy();
@@ -58,13 +59,10 @@ public:
     void cameraZoomIn();
     void cameraZoomOut();
 
-    // for input convert
     void mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize);
     void wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize);
     void keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize);
 
-    // turn the screen on if it was off, press BACK otherwise
-    // If the screen is off, it is turned on only on down
     void postBackOrScreenOn(bool down);
     void requestDeviceClipboard();
     void getDeviceClipboard(bool cut = false);
@@ -120,6 +118,7 @@ private:
     QString m_gameScript;
     QSize m_frameSize;
     UhidKeyboard m_keyboard;
+    KeyboardRouting m_keyboardRouting;
     bool m_uhidEnabled = false;
     bool m_uhidCreated = false;
 };

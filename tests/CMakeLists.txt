@@ -70,3 +70,27 @@ foreach(case_name IN ITEMS left right middle back forward aliases drag multi twi
     add_test(NAME mouse_${case_name} COMMAND mousemapping_tests ${case_name})
     set_tests_properties(mouse_${case_name} PROPERTIES TIMEOUT 15 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()
+
+# Source-identical routing checks, without a GUI backend or Android device.
+get_target_property(ROUTING_SOURCES mousemapping_tests SOURCES)
+list(REMOVE_ITEM ROUTING_SOURCES mousemapping_test.cpp)
+get_target_property(ROUTING_INCLUDES mousemapping_tests INCLUDE_DIRECTORIES)
+add_executable(inputrouting_tests inputrouting_test.cpp ${ROUTING_SOURCES})
+target_include_directories(inputrouting_tests PRIVATE ${ROUTING_INCLUDES})
+target_link_libraries(inputrouting_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+foreach(case_name IN ITEMS legacy_look_on look_disabled look_enabled ordinary_no_capture legacy_capture unmapped_custom unmapped_normal mapped_target normal_primary_only look_moves released_side_mapped release_flag_no_view replace_capture edit_capture reload_no_view invalid_look_flags invalid_vertical_ratio unknown_with_primary)
+    add_test(NAME routing_${case_name} COMMAND inputrouting_tests ${case_name})
+    set_tests_properties(routing_${case_name} PROPERTIES TIMEOUT 15)
+endforeach()
+
+add_executable(hybridkeyboard_tests hybridkeyboard_test.cpp ${ROUTING_SOURCES})
+target_include_directories(hybridkeyboard_tests PRIVATE ${ROUTING_INCLUDES})
+target_link_libraries(hybridkeyboard_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+foreach(case_name IN ITEMS unmapped_letters tab escape mapped_priority mouse_only chord concurrent toggle_release mouse_toggle repeat orphan_release focus_release physical_pair toggle_reserved mapped_modifier legacy_mode reload mixed_macro paused_macro)
+    add_test(NAME hybrid_${case_name} COMMAND hybridkeyboard_tests ${case_name})
+    set_tests_properties(hybrid_${case_name} PROPERTIES TIMEOUT 15)
+endforeach()
+
+add_executable(keyboardrouting_policy_test keyboardrouting_policy_test.cpp)
+target_include_directories(keyboardrouting_policy_test PRIVATE ${ROOT}/src/device/controller)
+add_test(NAME keyboardrouting_policy COMMAND keyboardrouting_policy_test)

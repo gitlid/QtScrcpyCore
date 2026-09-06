@@ -3,7 +3,6 @@
 
 #include "inputconvertnormal.h"
 #include "controller.h"
-#include "controller.h"
 
 InputConvertNormal::InputConvertNormal(Controller *controller) : InputConvertBase(controller) {}
 
@@ -11,8 +10,9 @@ InputConvertNormal::~InputConvertNormal() {}
 
 void InputConvertNormal::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
-    if (!from) {
-        return;
+    if (!from || !frameSize.isValid() || !showSize.isValid()) { return; }
+    if (from->type() != QEvent::MouseMove && from->button() != Qt::LeftButton) {
+        return; // Unmapped side/right/middle buttons are never generic finger taps.
     }
 
     // action
