@@ -21,8 +21,9 @@ public:
     virtual bool isCurrentCustomKeymap();
 
     void loadKeyMap(const QString &json);
+    bool handlesKeyboardKey(int key);
     // Restore only the enabled flag after clearing all held/delayed inputs.
-    void restoreGameMap(bool active) { m_gameMap = active; }
+    void restoreGameMap(bool active);
 
 protected:
     void updateSize(const QSize &frameSize, const QSize &showSize);
@@ -83,6 +84,7 @@ private:
     QSize m_frameSize;
     QSize m_showSize;
     bool m_gameMap = false;
+    bool m_mouseCaptured = false;
     bool m_needBackMouseMove = false;
     int m_multiTouchID[MULTI_TOUCH_MAX_NUM] = { 0 };
     KeyMap m_keyMap;

@@ -8,6 +8,7 @@
 
 #include "inputconvertbase.h"
 #include "uhidkeyboard.h"
+#include "keyboardrouting.h"
 
 class QTcpSocket;
 class Receiver;
@@ -120,6 +121,7 @@ private:
     QString m_gameScript;
     QSize m_frameSize;
     UhidKeyboard m_keyboard;
+    KeyboardRouting m_keyboardRouting;
     bool m_uhidEnabled = false;
     bool m_uhidCreated = false;
 };

@@ -30,7 +30,19 @@ InputConvertGame::InputConvertGame(Controller *controller) : InputConvertNormal(
     connect(m_ctrlSteerWheel.delayData.timer, &QTimer::timeout, this, &InputConvertGame::onSteerWheelTimer);
 }
 
-InputConvertGame::~InputConvertGame() {}
+InputConvertGame::~InputConvertGame()
+{
+    stopMouseMoveTimer();
+    hideMouseCursor(false); // A deleted/replaced mapper must release its capture.
+}
+
+void InputConvertGame::restoreGameMap(bool active)
+{
+    m_gameMap = active;
+    // Editing, focus loss and macro transitions must not silently re-capture.
+    m_needBackMouseMove = active && m_keyMap.isValidMouseMoveMap();
+    hideMouseCursor(false);
+}
 
 void InputConvertGame::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
@@ -43,19 +55,15 @@ void InputConvertGame::mouseEvent(const QMouseEvent *from, const QSize &frameSiz
     }
     if (m_gameMap) {
         updateSize(frameSize, showSize);
-        const auto &node = m_keyMap.getKeyMapNodeMouse(from->button());
-        if (m_needBackMouseMove && node.type == KeyMap::KMT_CLICK && node.data.click.switchMap) {
-            if (processMouseClick(from)) { return; }
-        }
-        if (!m_needBackMouseMove) {
-            if (m_keyMap.isValidMouseMoveMap() && processMouseMove(from)) { return; }
-            if (processMouseClick(from)) { return; }
-            if (from->type() == QEvent::MouseMove) {
-                // Do not leak a second ordinary touch while holding a mapped button.
-                for (unsigned int bit = 1; bit <= unsigned(Qt::MaxMouseButton); bit <<= 1) {
-                    if ((int(from->buttons()) & int(bit))
-                        && m_keyMap.getKeyMapNodeMouse(int(bit)).type != KeyMap::KMT_INVALID) { return; }
-                }
+        // A visible cursor changes mouse-look behavior, not button bindings.
+        // Always dispatch configured buttons before any ordinary pointer path.
+        if (processMouseClick(from)) { return; }
+        if (from->type() == QEvent::MouseMove) {
+            if (!m_needBackMouseMove && m_keyMap.isValidMouseMoveMap()
+                && processMouseMove(from)) { return; }
+            for (unsigned int bit = 1; bit <= unsigned(Qt::MaxMouseButton); bit <<= 1) {
+                if ((int(from->buttons()) & int(bit))
+                    && m_keyMap.getKeyMapNodeMouse(int(bit)).type != KeyMap::KMT_INVALID) { return; }
             }
         }
     }
@@ -71,11 +79,25 @@ void InputConvertGame::wheelEvent(const QWheelEvent *from, const QSize &frameSiz
     }
 }
 
+bool InputConvertGame::handlesKeyboardKey(int key)
+{
+    // The mode switch is reserved even while mappings are disabled.
+    if (m_keyMap.isSwitchOnKeyboard() && m_keyMap.getSwitchKey() == key) { return true; }
+    if (!m_gameMap) { return false; }
+    if (m_keyMap.getKeyMapNodeKey(key).type != KeyMap::KMT_INVALID) { return true; }
+    if (m_keyMap.isValidMouseMoveMap()) {
+        const auto &eyes = m_keyMap.getMouseMoveMap().data.mouseMove.smallEyes;
+        if (eyes.type == KeyMap::AT_KEY && eyes.key == key) { return true; }
+    }
+    return false;
+}
+
 void InputConvertGame::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (!from || !frameSize.isValid() || !showSize.isValid()) { return; }
     // 处理开关按键
     if (m_keyMap.isSwitchOnKeyboard() && m_keyMap.getSwitchKey() == from->key()) {
-        if (QEvent::KeyPress != from->type()) {
+        if (QEvent::KeyPress != from->type() || from->isAutoRepeat()) {
             return;
         }
         if (!switchGameMap()) {
@@ -84,9 +106,10 @@ void InputConvertGame::keyEvent(const QKeyEvent *from, const QSize &frameSize, c
         return;
     }
 
+    if (m_gameMap && from->isAutoRepeat()) { return; }
     const KeyMap::KeyMapNode &node = m_keyMap.getKeyMapNodeKey(from->key());
     // 处理特殊按键：可以释放出鼠标的按键
-    if (m_needBackMouseMove && KeyMap::KMT_CLICK == node.type && node.data.click.switchMap) {
+    if (m_gameMap && m_needBackMouseMove && KeyMap::KMT_CLICK == node.type && node.data.click.switchMap) {
         updateSize(frameSize, showSize);
         // Qt::Key_Tab Qt::Key_M for PUBG mobile
         processKeyClick(node.data.click.keyNode.pos, false, node.data.click.switchMap, from);
@@ -100,7 +123,9 @@ void InputConvertGame::keyEvent(const QKeyEvent *from, const QSize &frameSize, c
         }
 
         // small eyes
-        if (m_keyMap.isValidMouseMoveMap() && from->key() == m_keyMap.getMouseMoveMap().data.mouseMove.smallEyes.key) {
+        if (m_keyMap.isValidMouseMoveMap() && !m_needBackMouseMove
+            && m_keyMap.getMouseMoveMap().data.mouseMove.smallEyes.type == KeyMap::AT_KEY
+            && from->key() == m_keyMap.getMouseMoveMap().data.mouseMove.smallEyes.key) {
             m_ctrlMouseMove.smallEyes = (QEvent::KeyPress == from->type());
 
             if (QEvent::KeyPress == from->type()) {
@@ -163,16 +188,13 @@ void InputConvertGame::loadKeyMap(const QString &json)
 
 void InputConvertGame::updateSize(const QSize &frameSize, const QSize &showSize)
 {
-    if (showSize != m_showSize) {
-        if (m_gameMap && m_keyMap.isValidMouseMoveMap()) {
-#ifdef QT_NO_DEBUG
-            // show size change, resize grab cursor
-            emit grabCursor(true);
-#endif
-        }
-    }
+    const bool resized = showSize != m_showSize;
     m_frameSize = frameSize;
     m_showSize = showSize;
+    if (resized && m_mouseCaptured && m_gameMap && !m_needBackMouseMove
+        && m_keyMap.isValidMouseMoveMap()) {
+        emit grabCursor(true); // Recalculate clipping only for an active view.
+    }
 }
 
 void InputConvertGame::sendTouchDownEvent(int id, QPointF pos)
@@ -425,8 +447,11 @@ void InputConvertGame::processKeyClick(const QPointF &clickPos, bool clickTwice,
         }
         if (id >= 0) { sendTouchUpEvent(id, clickPos); }
         detachTouchID(key);
-        if (switchMap && id >= 0) {
+        if (switchMap && id >= 0 && m_gameMap && m_keyMap.isValidMouseMoveMap()) {
             m_needBackMouseMove = !m_needBackMouseMove;
+            stopMouseMoveTimer();
+            mouseMoveStopTouch();
+            m_ctrlMouseMove.lastPos = QPointF();
             hideMouseCursor(!m_needBackMouseMove);
         }
     }
@@ -624,6 +649,7 @@ bool InputConvertGame::processMouseMove(const QMouseEvent *from)
         QPointF distance    {distance_raw.x() / speedRatio.x(), distance_raw.y() / speedRatio.y()};
 
         mouseMoveStartTouch(from);
+        if (!m_ctrlMouseMove.touching) { return true; }
         startMouseMoveTimer();
 
         m_ctrlMouseMove.lastConverPos.setX(m_ctrlMouseMove.lastConverPos.x() + distance.x() / m_showSize.width());
@@ -707,10 +733,11 @@ void InputConvertGame::moveCursorTo(const QMouseEvent *from, const QPoint &local
 void InputConvertGame::mouseMoveStartTouch(const QMouseEvent *from)
 {
     Q_UNUSED(from)
-    if (!m_ctrlMouseMove.touching) {
+    if (m_gameMap && !m_needBackMouseMove && m_keyMap.isValidMouseMoveMap() && !m_ctrlMouseMove.touching) {
         QPointF mouseMoveStartPos
             = m_ctrlMouseMove.smallEyes ? m_keyMap.getMouseMoveMap().data.mouseMove.smallEyes.pos : m_keyMap.getMouseMoveMap().data.mouseMove.startPos;
         int id = attachTouchID(kMouseLookTouchKey);
+        if (id < 0) { return; }
         sendTouchDownEvent(id, mouseMoveStartPos);
         m_ctrlMouseMove.lastConverPos = mouseMoveStartPos;
         m_ctrlMouseMove.touching = true;
@@ -743,36 +770,24 @@ void InputConvertGame::stopMouseMoveTimer()
 bool InputConvertGame::switchGameMap()
 {
     m_gameMap = !m_gameMap;
-    qInfo() << QString("current keymap mode: %1").arg(m_gameMap ? "custom" : "normal");
-
-    if (!m_keyMap.isValidMouseMoveMap()) {
-        return m_gameMap;
-    }
-#ifdef QT_NO_DEBUG
-    // grab cursor and set cursor only mouse move map
-    emit grabCursor(m_gameMap);
-#endif
-    hideMouseCursor(m_gameMap);
-
-    if (!m_gameMap) {
-        stopMouseMoveTimer();
-        mouseMoveStopTouch();
-    }
-
+    m_needBackMouseMove = false;
+    const bool mouseLook = m_gameMap && m_keyMap.isValidMouseMoveMap();
+    qInfo() << "current keymap mode:" << (m_gameMap ? "custom" : "normal")
+            << "mouse look:" << (mouseLook ? "ON (captured)" : "OFF (free cursor)");
+    stopMouseMoveTimer();
+    mouseMoveStopTouch();
+    m_ctrlMouseMove.lastPos = QPointF();
+    hideMouseCursor(mouseLook);
     return m_gameMap;
 }
 
 void InputConvertGame::hideMouseCursor(bool hide)
 {
-    if (hide) {
-#ifdef QT_NO_DEBUG
-        QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
-#else
-        QGuiApplication::setOverrideCursor(QCursor(Qt::CrossCursor));
-#endif
-    } else {
-        QGuiApplication::restoreOverrideCursor();
-    }
+    if (m_mouseCaptured == hide) { return; }
+    m_mouseCaptured = hide;
+    // UI owns a widget-scoped cursor and native clipping. Never push a global
+    // QGuiApplication override here: mapper replacement used to leak it.
+    emit grabCursor(hide);
 }
 
 void InputConvertGame::timerEvent(QTimerEvent *event)

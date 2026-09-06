@@ -84,6 +84,7 @@ void Controller::releaseKeyboard()
     if (isActionPlaying()) { return; } // Playback owns its keys until Stop.
     QCoreApplication::sendPostedEvents(this, ControlMsg::Control);
     m_keyboard.clear();
+    m_keyboardRouting.clearUhid();
     if (!m_uhidCreated) { return; }
     ControlMsg release(ControlMsg::CMT_UHID_INPUT);
     if (sendMessage(&release) && m_actionMacro) { m_actionMacro->record(release); }
@@ -93,6 +94,7 @@ void Controller::shutdownKeyboard()
 {
     QCoreApplication::removePostedEvents(this, ControlMsg::Control);
     m_keyboard.clear();
+    m_keyboardRouting.clearUhid();
     if (!m_uhidCreated) { return; }
     ControlMsg release(ControlMsg::CMT_UHID_INPUT);
     sendControl(release.serializeData());
@@ -112,6 +114,7 @@ void Controller::resetInputState(bool preserveKeymap)
 {
     if (m_inputBlocked) { return; }
     m_inputBlocked = true;
+    m_keyboardRouting.clear();
     const bool gameEnabled = preserveKeymap && isCurrentCustomKeymap();
     QCoreApplication::removePostedEvents(this, ControlMsg::Control);
     if (m_actionMacro) { m_actionMacro->releaseInputs(); }
@@ -178,6 +181,7 @@ void Controller::test(QRect rc)
 
 void Controller::updateScript(QString gameScript)
 {
+    m_keyboardRouting.clear();
     releaseKeyboard();
     m_gameScript = gameScript;
     if (m_inputConvert) {
@@ -514,11 +518,29 @@ void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, con
 
 void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
-    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    if (!from || m_cameraMode || m_inputBlocked || isActionPlaying()
+        || !frameSize.isValid() || !showSize.isValid()
+        || (from->type() != QEvent::KeyPress && from->type() != QEvent::KeyRelease)) { return; }
     setFrameSize(frameSize);
+    auto *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    const bool mapped = game && game->handlesKeyboardKey(from->key());
+    const auto preferred = m_uhidEnabled && !mapped ? KeyboardRouting::Uhid : KeyboardRouting::Converter;
+    const auto decision = m_keyboardRouting.dispatch(*from, preferred);
+    if (decision.route == KeyboardRouting::Ignore) { return; }
+    if (decision.route == KeyboardRouting::Uhid) {
+        // Keep the original native scancode and modifier events for Android's
+        // physical keyboard. Never send this key through the touch mapper too.
+        uhidKeyEvent(from);
+        return;
+    }
     if (m_inputConvert) {
         const bool wasGameMap = isCurrentCustomKeymap();
-        m_inputConvert->keyEvent(from, frameSize, showSize);
+        // Release the same logical mapping chosen on key-down, even if the
+        // keyboard layout or Shift/Tab representation has changed meanwhile.
+        QKeyEvent paired(from->type(), decision.logicalKey, from->modifiers(),
+                         from->nativeScanCode(), from->nativeVirtualKey(), from->nativeModifiers(),
+                         from->text(), from->isAutoRepeat(), ushort(from->count()));
+        m_inputConvert->keyEvent(&paired, frameSize, showSize);
         if (wasGameMap != isCurrentCustomKeymap()) {
             if (isCurrentCustomKeymap()) { releaseKeyboard(); }
             else { resetInputState(); }

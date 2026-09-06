@@ -171,6 +171,7 @@ private:
 
     // mouse move index
     int m_idxMouseMove = -1;
+    bool m_mouseLookEnabled = false;
 
     // mapping of key/mouse event name to index
     QMetaEnum m_metaEnumKey = QMetaEnum::fromType<Qt::Key>();
