@@ -161,6 +161,8 @@ public:
     virtual bool playActionMacro(int repeatCount = 1, int intervalMs = 0) = 0;
     virtual bool playActionMacroAdvanced(int repeats, int interval, double speed, qint64 limitMs)
     { return speed == 1.0 && limitMs == 0 && playActionMacro(repeats, interval); }
+    virtual QString currentKeymapScript() const { return QString(); }
+    virtual void prepareKeymapEditing() {}
     virtual bool pauseActionMacro() { return false; }
     virtual bool resumeActionMacro() { return false; }
     virtual bool isActionPaused() const { return false; }

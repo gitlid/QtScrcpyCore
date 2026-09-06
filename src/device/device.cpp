@@ -195,6 +195,8 @@ bool Device::playActionMacroAdvanced(int repeats, int interval, double speed, qi
     return !isCameraMode() && m_serverStartSuccess && m_controller
         && m_controller->playActionMacroAdvanced(repeats, interval, speed, limitMs);
 }
+QString Device::currentKeymapScript() const { return m_controller ? m_controller->currentKeymapScript() : QString(); }
+void Device::prepareKeymapEditing() { if (m_controller && !isActionPlaying() && !isActionRecording()) { m_controller->prepareKeymapEditing(); } }
 bool Device::pauseActionMacro() { return m_controller && m_controller->pauseActionMacro(); }
 bool Device::resumeActionMacro() { return m_serverStartSuccess && m_controller && m_controller->resumeActionMacro(); }
 bool Device::isActionPaused() const { return m_controller && m_controller->isActionPaused(); }

@@ -90,6 +90,8 @@ public:
     bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR) override;
     bool playActionMacro(int repeatCount = 1, int intervalMs = 0) override;
     bool playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    QString currentKeymapScript() const override;
+    void prepareKeymapEditing() override;
     bool pauseActionMacro();
     bool resumeActionMacro();
     bool isActionPaused() const;

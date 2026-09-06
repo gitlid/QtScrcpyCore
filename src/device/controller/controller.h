@@ -78,6 +78,8 @@ public:
     bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR);
     bool playActionMacro(int repeatCount, int intervalMs);
     bool playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    QString currentKeymapScript() const { return m_gameScript; }
+    void prepareKeymapEditing() { resetInputState(true); }
     bool pauseActionMacro();
     bool resumeActionMacro();
     bool isActionPaused() const;
