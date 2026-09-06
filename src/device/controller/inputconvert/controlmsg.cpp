@@ -74,7 +74,7 @@ bool positionFromJson(const QJsonValue &value, QRect *position, QString *error)
         || !readInteger(json, "height", 1, 0xffff, &height, error)) {
         return false;
     }
-    if (x > width || y > height) {
+    if (x >= width || y >= height) {
         return failJson(error, "touch or scroll coordinates are outside the recorded screen");
     }
     *position = QRect(static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height));
@@ -113,6 +113,20 @@ QString messageTypeName(ControlMsg::ControlMsgType type)
 ControlMsg::ControlMsg(ControlMsgType controlMsgType) : QScrcpyEvent(Control)
 {
     m_data.type = controlMsgType;
+    // Initialize pointer-bearing union alternatives before JSON validation:
+    // fromJson() deletes partially populated messages on malformed input.
+    switch (controlMsgType) {
+    case CMT_INJECT_TEXT: m_data.injectText.text = Q_NULLPTR; break;
+    case CMT_SET_CLIPBOARD:
+        m_data.setClipboard.sequence = 0;
+        m_data.setClipboard.text = Q_NULLPTR;
+        m_data.setClipboard.paste = false;
+        break;
+    case CMT_START_APP: m_data.startApp.name = Q_NULLPTR; break;
+    case CMT_SCAN_FILE: m_data.scanFile.path = Q_NULLPTR; break;
+    case CMT_GET_CLIPBOARD: m_data.getClipboard.copyKey = GCCK_NONE; break;
+    default: break;
+    }
 }
 
 ControlMsg::~ControlMsg()
@@ -184,6 +198,8 @@ void ControlMsg::setGetClipboardMsgData(ControlMsg::GetClipboardCopyKey copyKey)
 
 void ControlMsg::setSetClipboardMsgData(QString &text, bool paste)
 {
+    m_data.setClipboard.paste = paste;
+    m_data.setClipboard.sequence = 0;
     if (text.isEmpty()) {
         m_data.setClipboard.text = Q_NULLPTR;
         return;

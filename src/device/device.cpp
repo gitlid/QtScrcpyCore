@@ -308,6 +308,7 @@ void Device::initSignals()
     if (m_server) {
         connect(m_server, &Server::serverStarted, this, [this](bool success, const QString &deviceName, const QSize &size) {
             m_serverStartSuccess = success;
+            if (m_controller) { m_controller->setFrameSize(success ? size : QSize()); }
             emit deviceConnected(success, m_params.serial, deviceName, size);
             if (success) {
                 double diff = m_startTimeCount.elapsed() / 1000.0;
@@ -383,6 +384,7 @@ void Device::initSignals()
     if (m_stream) {
         connect(m_stream, &Demuxer::sessionChanged, this, [this](const QSize &size, bool clientResized) {
             qInfo() << "Video session changed to" << size << "client resized:" << clientResized;
+            if (m_controller) { m_controller->setFrameSize(size); }
             if (m_decoder) {
                 m_decoder->onVideoSessionChanged(size);
             }
@@ -493,6 +495,7 @@ void Device::disconnectDevice()
     if (m_controller) {
         m_controller->stopActionPlayback();
         m_controller->stopActionRecording();
+        m_controller->setFrameSize(QSize());
     }
     m_server->stop();
     m_server = Q_NULLPTR;

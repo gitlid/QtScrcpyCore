@@ -17,9 +17,22 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
     Q_ASSERT(m_receiver);
 
     m_actionMacro = new ActionMacro([this](ControlMsg *message) {
-        postControlMsg(message);
+        // Synchronous enqueue into the control socket. Macro events must not
+        // survive Stop in Qt's posted-event queue.
+        const bool sent = sendControl(message->serializeData());
+        delete message;
+        if (!sent && m_actionMacro) {
+            m_actionMacro->abort(tr("The device control connection failed. Playback has stopped."));
+        }
     }, this);
-    connect(m_actionMacro, &ActionMacro::stateChanged, this, &Controller::actionMacroStateChanged);
+    connect(m_actionMacro, &ActionMacro::stateChanged, this,
+            [this](bool recording, bool playing, int count) {
+        const bool busy = recording || playing;
+        const bool finished = m_macroWasBusy && !busy;
+        m_macroWasBusy = busy;
+        if (finished) { resetInputState(); }
+        emit actionMacroStateChanged(recording, playing, count);
+    });
     connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
     connect(m_actionMacro, &ActionMacro::errorOccurred, this, &Controller::actionMacroError);
 
@@ -27,6 +40,28 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
 }
 
 Controller::~Controller() {}
+
+void Controller::setFrameSize(const QSize &size)
+{
+    m_frameSize = size;
+    if (m_actionMacro) { m_actionMacro->setCurrentScreen(size); }
+}
+
+void Controller::resetInputState(bool preserveKeymap)
+{
+    if (m_inputBlocked) { return; }
+    m_inputBlocked = true;
+    const bool gameEnabled = preserveKeymap && isCurrentCustomKeymap();
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    if (m_actionMacro) { m_actionMacro->releaseInputs(); }
+    // Destroy the old mapper: its child timers and context-bound delayed
+    // callbacks must not regenerate held touches after an emergency stop.
+    updateScript(m_gameScript);
+    InputConvertGame *game = qobject_cast<InputConvertGame *>(m_inputConvert.data());
+    if (game) { game->restoreGameMap(gameEnabled); }
+    emit grabCursor(false);
+    m_inputBlocked = false;
+}
 
 void Controller::postControlMsg(ControlMsg *controlMsg)
 {
@@ -46,10 +81,10 @@ void Controller::postControlMsg(ControlMsg *controlMsg)
         }
     }
 
-    if (m_actionMacro) {
-        m_actionMacro->record(*controlMsg);
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) {
+        delete controlMsg;
+        return;
     }
-
     QCoreApplication::postEvent(this, controlMsg);
 }
 
@@ -77,6 +112,7 @@ void Controller::test(QRect rc)
 
 void Controller::updateScript(QString gameScript)
 {
+    m_gameScript = gameScript;
     if (m_inputConvert) {
         delete m_inputConvert;
     }
@@ -279,7 +315,10 @@ void Controller::postTextInput(QString &text)
 
 bool Controller::startActionRecording()
 {
-    return m_actionMacro && !m_cameraMode && m_actionMacro->startRecording();
+    if (!m_actionMacro || m_cameraMode || m_actionMacro->isPlaying()
+        || m_actionMacro->isRecording() || !m_frameSize.isValid()) { return false; }
+    resetInputState(true);
+    return m_actionMacro->startRecording();
 }
 
 bool Controller::stopActionRecording()
@@ -299,7 +338,10 @@ bool Controller::loadActionMacro(const QString &fileName, QString *error)
 
 bool Controller::playActionMacro(int repeatCount, int intervalMs)
 {
-    return m_actionMacro && !m_cameraMode && m_actionMacro->play(repeatCount, intervalMs);
+    if (!m_actionMacro || m_cameraMode || m_actionMacro->isRecording()
+        || m_actionMacro->isPlaying() || !m_frameSize.isValid()) { return false; }
+    resetInputState();
+    return m_actionMacro->play(repeatCount, intervalMs);
 }
 
 void Controller::stopActionPlayback()
@@ -353,6 +395,8 @@ void Controller::cameraZoomOut()
 
 void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    setFrameSize(frameSize);
     if (m_inputConvert) {
         m_inputConvert->mouseEvent(from, frameSize, showSize);
     }
@@ -360,6 +404,8 @@ void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, con
 
 void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    setFrameSize(frameSize);
     if (m_inputConvert) {
         m_inputConvert->wheelEvent(from, frameSize, showSize);
     }
@@ -367,6 +413,8 @@ void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, con
 
 void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
+    setFrameSize(frameSize);
     if (m_inputConvert) {
         m_inputConvert->keyEvent(from, frameSize, showSize);
     }
@@ -376,8 +424,12 @@ bool Controller::event(QEvent *event)
 {
     if (event && static_cast<ControlMsg::Type>(event->type()) == ControlMsg::Control) {
         ControlMsg *controlMsg = dynamic_cast<ControlMsg *>(event);
-        if (controlMsg) {
-            sendControl(controlMsg->serializeData());
+        if (controlMsg && !m_inputBlocked && !(m_actionMacro && m_actionMacro->isPlaying())) {
+            if (sendControl(controlMsg->serializeData())) {
+                if (m_actionMacro) { m_actionMacro->record(*controlMsg); }
+            } else if (m_actionMacro && m_actionMacro->isRecording()) {
+                m_actionMacro->abort(tr("The device control connection failed. Recording has stopped."));
+            }
         }
         return true;
     }

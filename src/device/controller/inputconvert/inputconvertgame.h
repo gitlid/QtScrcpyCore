@@ -21,6 +21,8 @@ public:
     virtual bool isCurrentCustomKeymap();
 
     void loadKeyMap(const QString &json);
+    // Restore only the enabled flag after clearing all held/delayed inputs.
+    void restoreGameMap(bool active) { m_gameMap = active; }
 
 protected:
     void updateSize(const QSize &frameSize, const QSize &showSize);

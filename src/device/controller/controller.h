@@ -22,6 +22,7 @@ public:
 
     void postControlMsg(ControlMsg *controlMsg);
     void setCameraMode(bool cameraMode);
+    void setFrameSize(const QSize &size);
     void recvDeviceMsg(DeviceMsg *deviceMsg);
     void test(QRect rc);
 
@@ -86,6 +87,7 @@ private:
     bool sendControl(const QByteArray &buffer);
     void postKeyCodeClick(AndroidKeycode keycode);
     void sendPendingResize();
+    void resetInputState(bool preserveKeymap = false);
 
 private:
     QPointer<Receiver> m_receiver;
@@ -95,6 +97,10 @@ private:
     QSize m_pendingResize;
     bool m_resizeQueued = false;
     bool m_cameraMode = false;
+    bool m_inputBlocked = false;
+    bool m_macroWasBusy = false;
+    QString m_gameScript;
+    QSize m_frameSize;
 };
 
 #endif // CONTROLLER_H
