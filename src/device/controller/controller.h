@@ -77,6 +77,12 @@ public:
     bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const;
     bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR);
     bool playActionMacro(int repeatCount, int intervalMs);
+    bool playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    bool pauseActionMacro();
+    bool resumeActionMacro();
+    bool isActionPaused() const;
+    bool actionMacroInterruptedInput() const;
+    qint64 actionMacroElapsedMs() const;
     void stopActionPlayback();
     bool isActionRecording() const;
     bool isActionPlaying() const;

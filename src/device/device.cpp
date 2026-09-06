@@ -190,6 +190,17 @@ bool Device::playActionMacro(int repeatCount, int intervalMs)
     return !isCameraMode() && m_controller && m_controller->playActionMacro(repeatCount, intervalMs);
 }
 
+bool Device::playActionMacroAdvanced(int repeats, int interval, double speed, qint64 limitMs)
+{
+    return !isCameraMode() && m_serverStartSuccess && m_controller
+        && m_controller->playActionMacroAdvanced(repeats, interval, speed, limitMs);
+}
+bool Device::pauseActionMacro() { return m_controller && m_controller->pauseActionMacro(); }
+bool Device::resumeActionMacro() { return m_serverStartSuccess && m_controller && m_controller->resumeActionMacro(); }
+bool Device::isActionPaused() const { return m_controller && m_controller->isActionPaused(); }
+bool Device::actionMacroInterruptedInput() const { return m_controller && m_controller->actionMacroInterruptedInput(); }
+qint64 Device::actionMacroElapsedMs() const { return m_controller ? m_controller->actionMacroElapsedMs() : 0; }
+
 void Device::stopActionPlayback()
 {
     if (m_controller) {

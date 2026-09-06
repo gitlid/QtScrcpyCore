@@ -24,6 +24,13 @@ public:
     bool save(const QString &fileName, QString *error = Q_NULLPTR) const;
     bool load(const QString &fileName, QString *error = Q_NULLPTR);
     bool play(int repeatCount, int intervalMs);
+    bool play(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    bool pause();
+    bool resume();
+    bool isPaused() const { return m_paused || m_recordingPaused; }
+    bool interruptedInput() const { return m_interruptedInput; }
+    qint64 activeElapsedMs() const;
+    double playbackSpeed() const { return m_speed; }
     void stopPlayback();
     void abort(const QString &reason);
     void releaseInputs();
@@ -53,6 +60,10 @@ private:
     static QSize screenOf(const QJsonObject &message);
     bool append(const QJsonObject &message, qint64 atMs);
     void scheduleNext();
+    qint64 phaseElapsedNs() const;
+    qint64 recordingElapsedMs() const;
+    bool hasActiveInputs() const;
+    void prepareResumeBoundary();
     void updateActiveInputs(const QJsonObject &message);
     QVector<QJsonObject> takeReleases();
     void dispatchReleases(const QVector<QJsonObject> &releases);
@@ -73,6 +84,18 @@ private:
     QSize m_currentScreen;
     qint64 m_durationMs = 0;
     qint64 m_encodedBytes = 1024;
+    // Paused playback still owns the device: m_playing remains true.
+    QElapsedTimer m_activeTimer;
+    qint64 m_phaseBaseNs = 0;
+    qint64 m_activeBaseNs = 0;
+    qint64 m_recordingBaseNs = 0;
+    qint64 m_limitMs = 0;
+    qint64 m_resumeAtMs = 0;
+    int m_resumeIndex = 0;
+    double m_speed = 1.0;
+    bool m_paused = false;
+    bool m_recordingPaused = false;
+    bool m_interruptedInput = false;
     bool m_recording = false;
     bool m_playing = false;
     bool m_stopping = false;

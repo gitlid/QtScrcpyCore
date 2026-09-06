@@ -159,6 +159,13 @@ public:
     virtual bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR) = 0;
     // repeatCount == 0 means repeat until stopActionPlayback() is called.
     virtual bool playActionMacro(int repeatCount = 1, int intervalMs = 0) = 0;
+    virtual bool playActionMacroAdvanced(int repeats, int interval, double speed, qint64 limitMs)
+    { return speed == 1.0 && limitMs == 0 && playActionMacro(repeats, interval); }
+    virtual bool pauseActionMacro() { return false; }
+    virtual bool resumeActionMacro() { return false; }
+    virtual bool isActionPaused() const { return false; }
+    virtual bool actionMacroInterruptedInput() const { return false; }
+    virtual qint64 actionMacroElapsedMs() const { return 0; }
     virtual void stopActionPlayback() = 0;
     virtual bool isActionRecording() const = 0;
     virtual bool isActionPlaying() const = 0;

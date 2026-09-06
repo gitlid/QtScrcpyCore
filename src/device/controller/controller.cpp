@@ -405,6 +405,11 @@ bool Controller::loadActionMacro(const QString &fileName, QString *error)
 
 bool Controller::playActionMacro(int repeatCount, int intervalMs)
 {
+    return playActionMacroAdvanced(repeatCount, intervalMs, 1.0, 0);
+}
+
+bool Controller::playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs)
+{
     if (!m_actionMacro || m_cameraMode || m_actionMacro->isRecording()
         || m_actionMacro->isPlaying() || !m_frameSize.isValid()) { return false; }
     resetInputState();
@@ -412,10 +417,28 @@ bool Controller::playActionMacro(int repeatCount, int intervalMs)
         emit actionMacroError(tr("Cannot create the UHID keyboard for this macro."));
         return false;
     }
-    const bool playing = m_actionMacro->play(repeatCount, intervalMs);
+    const bool playing = m_actionMacro->play(repeatCount, intervalMs, speed, limitMs);
     if (!playing && !m_uhidEnabled) { shutdownKeyboard(); }
     return playing;
 }
+
+bool Controller::pauseActionMacro()
+{
+    if (!m_actionMacro) { return false; }
+    QCoreApplication::removePostedEvents(this, ControlMsg::Control);
+    const bool ok = m_actionMacro->pause();
+    if (ok && m_actionMacro->isRecording()) { resetInputState(true); }
+    return ok;
+}
+bool Controller::resumeActionMacro()
+{
+    if (!m_actionMacro) { return false; }
+    if (m_actionMacro->isRecording()) { resetInputState(true); }
+    return m_actionMacro->resume();
+}
+bool Controller::isActionPaused() const { return m_actionMacro && m_actionMacro->isPaused(); }
+bool Controller::actionMacroInterruptedInput() const { return m_actionMacro && m_actionMacro->interruptedInput(); }
+qint64 Controller::actionMacroElapsedMs() const { return m_actionMacro ? m_actionMacro->activeElapsedMs() : 0; }
 
 void Controller::stopActionPlayback()
 {

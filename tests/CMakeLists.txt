@@ -31,3 +31,19 @@ foreach(case_name IN ITEMS
     add_test(NAME macro_${case_name} COMMAND actionmacro_regression ${case_name})
     set_tests_properties(macro_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()
+
+add_executable(macroexecution_tests macroexecution_test.cpp
+    ${ROOT}/src/device/controller/actionmacro.cpp
+    ${ROOT}/src/device/controller/actionmacro.h
+    ${ROOT}/src/device/controller/bufferutil.cpp
+    ${ROOT}/src/device/controller/inputconvert/controlmsg.cpp)
+target_include_directories(macroexecution_tests PRIVATE
+    ${ROOT}/src/common ${ROOT}/src/device/android
+    ${ROOT}/src/device/controller ${ROOT}/src/device/controller/inputconvert)
+target_link_libraries(macroexecution_tests PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+foreach(case_name IN ITEMS speed_bounds speed_eight pause_wait pause_interval time_limit
+    limit_during_interval limit_excludes_pause stop_paused touch_boundary key_boundary
+    hid_pause_release recording_pause record_stop_paused geometry_paused pause_reentrancy busy_paused same_timestamp)
+    add_test(NAME execution_${case_name} COMMAND macroexecution_tests ${case_name})
+    set_tests_properties(execution_${case_name} PROPERTIES TIMEOUT 15)
+endforeach()

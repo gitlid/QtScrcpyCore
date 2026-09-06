@@ -1,4 +1,4 @@
-﻿#ifndef DEVICE_H
+#ifndef DEVICE_H
 #define DEVICE_H
 
 #include <set>
@@ -89,6 +89,12 @@ public:
     bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const override;
     bool loadActionMacro(const QString &fileName, QString *error = Q_NULLPTR) override;
     bool playActionMacro(int repeatCount = 1, int intervalMs = 0) override;
+    bool playActionMacroAdvanced(int repeatCount, int intervalMs, double speed, qint64 limitMs);
+    bool pauseActionMacro();
+    bool resumeActionMacro();
+    bool isActionPaused() const;
+    bool actionMacroInterruptedInput() const;
+    qint64 actionMacroElapsedMs() const;
     void stopActionPlayback() override;
     bool isActionRecording() const override;
     bool isActionPlaying() const override;
