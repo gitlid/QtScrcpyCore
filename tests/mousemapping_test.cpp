@@ -1,4 +1,4 @@
-#include <QApplication>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QEventLoop>
 #include <QFile>
@@ -144,7 +144,9 @@ bool uhidPriority() {
 }
 }
 int main(int argc,char **argv) {
-    QApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);
+    // These are Controller/QObject tests, not window tests. A GUI platform
+    // would introduce unrelated offscreen-plugin allocations into LeakSanitizer.
+    QCoreApplication app(argc,argv);
     const QVector<QPair<QString,std::function<bool()>>> cases{
         {"left",[]{return buttonClick("LeftButton",Qt::LeftButton);}},
         {"right",[]{return buttonClick("RightButton",Qt::RightButton);}},
