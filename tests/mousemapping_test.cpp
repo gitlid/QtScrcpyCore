@@ -77,7 +77,7 @@ bool twice() {
 bool androidKey() {
     Fixture f({QJsonObject{{"type","KMT_ANDROID_KEY"},{"key","BackButton"},{"androidKey",3}}});
     mouse(f.c,Qt::BackButton,true);mouse(f.c,Qt::BackButton,false);
-    return f.sent.size()==2&&f.sent[0][0]==0&&f.sent[1][0]==0&&action(f.sent[0])==0&&action(f.sent[1])==1;
+    return f.sent.size()==2&&f.sent.at(0).at(0)==char(0)&&f.sent.at(1).at(0)==char(0)&&action(f.sent[0])==0&&action(f.sent[1])==1;
 }
 bool joystick() {
     Fixture f({QJsonObject{{"type","KMT_STEER_WHEEL"},{"centerPos",pos(.3,.5)},
