@@ -46,7 +46,7 @@ QVector<QByteArray> touches(const QVector<QByteArray>&sent) {
 }
 int x(const QByteArray&b){return int(qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(b.constData()+10)));}
 int action(const QByteArray&b){return int(quint8(b.at(1)));}
-bool legacyLookOff() { KeyMap m;m.loadKeyMap(json(root(true)));return !m.isValidMouseMoveMap(); }
+bool legacyLookOn() { KeyMap m;m.loadKeyMap(json(root(true)));return m.isValidMouseMoveMap(); }
 bool explicitLook(bool enabled) {
     auto r=root(true);r["mouseLookEnabled"]=enabled;KeyMap m;m.loadKeyMap(json(r));return m.isValidMouseMoveMap()==enabled;
 }
@@ -54,9 +54,9 @@ bool noViewNoCapture() {
     Fixture f(root());f.toggle();f.move();f.move(QPointF(750,510));
     return f.c.isCurrentCustomKeymap()&&!f.captures.contains(true)&&f.sent.isEmpty();
 }
-bool legacyNoCapture() {
+bool legacyCaptures() {
     Fixture f(root(true));f.toggle();f.move();f.move(QPointF(750,510));
-    return !f.captures.contains(true)&&f.sent.isEmpty();
+    return f.captures.contains(true)&&!touches(f.sent).isEmpty();
 }
 bool unmappedSide(bool enabled) {
     Fixture f(root());if(enabled)f.toggle();f.sent.clear();
@@ -123,8 +123,8 @@ bool unknownWhilePrimaryHeld() {
 int main(int argc,char**argv){
     QCoreApplication app(argc,argv);
     const QVector<QPair<QString,std::function<bool()>>> tests{
-        {"legacy_look_off",legacyLookOff},{"look_disabled",[]{return explicitLook(false);}},{"look_enabled",[]{return explicitLook(true);}},
-        {"ordinary_no_capture",noViewNoCapture},{"legacy_no_capture",legacyNoCapture},
+        {"legacy_look_on",legacyLookOn},{"look_disabled",[]{return explicitLook(false);}},{"look_enabled",[]{return explicitLook(true);}},
+        {"ordinary_no_capture",noViewNoCapture},{"legacy_capture",legacyCaptures},
         {"unmapped_custom",[]{return unmappedSide(true);}},{"unmapped_normal",[]{return unmappedSide(false);}},
         {"mapped_target",mappedTarget},{"normal_primary_only",normalPrimaryOnly},{"look_moves",explicitLookMoves},
         {"released_side_mapped",releasedSideStillMapped},{"release_flag_no_view",releaseFlagWithoutView},

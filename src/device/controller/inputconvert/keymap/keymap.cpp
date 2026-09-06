@@ -52,13 +52,13 @@ void KeyMap::loadKeyMap(const QString &json)
     m_switchKey.type = switchKey.first;
     m_switchKey.key = switchKey.second;
 
-    // Ordinary bindings do not imply FPS mouse look. Old profiles may contain
-    // an inherited mouseMoveMap that was invisible in the editor.
+    // Preserve existing FPS profiles. New ordinary profiles explicitly disable
+    // mouse look; editors must display this setting instead of hiding it.
     if (rootObj.contains("mouseLookEnabled") && !rootObj.value("mouseLookEnabled").isBool()) {
         errorString = QString("mouseLookEnabled must be boolean");
         goto parseError;
     }
-    m_mouseLookEnabled = rootObj.value("mouseLookEnabled").toBool(false);
+    m_mouseLookEnabled = rootObj.value("mouseLookEnabled").toBool(checkItemObject(rootObj, "mouseMoveMap"));
     if (m_mouseLookEnabled && !checkItemObject(rootObj, "mouseMoveMap")) {
         errorString = QString("Mouse look requires a mouseMoveMap");
         goto parseError;
