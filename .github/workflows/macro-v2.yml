@@ -1,8 +1,12 @@
 name: Keymapper input regression
 on:
   push:
-    branches: [feature/scrcpy-keymapper]
-    paths: ['src/**', 'include/**', 'tests/**', '.github/workflows/macro-v2.yml']
+    branches: [main, feature/scrcpy-keymapper]
+    tags: ['keymapper-v*']
+    paths: ['src/**', 'include/**', 'tests/**', 'CMakeLists.txt', '.github/workflows/macro-v2.yml']
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'include/**', 'tests/**', 'CMakeLists.txt', '.github/workflows/macro-v2.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   regression:
-    if: github.repository == 'gitlid/QtScrcpyCore' && github.ref == 'refs/heads/feature/scrcpy-keymapper'
+    if: github.repository == 'gitlid/QtScrcpyCore'
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
