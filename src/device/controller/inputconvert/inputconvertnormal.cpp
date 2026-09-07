@@ -19,6 +19,9 @@ void InputConvertNormal::mouseEvent(const QMouseEvent *from, const QSize &frameS
     AndroidMotioneventAction action;
     switch (from->type()) {
     case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonDblClick:
+        // Qt replaces the second press with DblClick; forward exactly one DOWN.
+        // The following release completes the second tap, with no added delay.
         action = AMOTION_EVENT_ACTION_DOWN;
         break;
     case QEvent::MouseButtonRelease:
