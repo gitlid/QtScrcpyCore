@@ -98,6 +98,7 @@ signals:
     void deviceDisconnected(QString serial);
     void actionMacroStateChanged(bool recording, bool playing, int eventCount);
     void actionMacroProgress(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
+    void actionMacroApplicationInterrupted();
     void actionMacroError(const QString &message);
 
 public:
@@ -150,6 +151,9 @@ public:
 
     virtual void updateScript(QString script) = 0;
     virtual bool isCurrentCustomKeymap() = 0;
+    virtual bool applyAppKeymap(const QString &script) { Q_UNUSED(script); return false; }
+    virtual void setActionMacroApplicationBound(bool enabled) { Q_UNUSED(enabled); }
+    virtual bool actionMacroScreenMatches() const { return true; }
 
     virtual bool isUhidKeyboardEnabled() const = 0;
     virtual void releaseKeyboard() = 0;

@@ -37,6 +37,9 @@ public:
 
     void updateScript(QString gameScript = "");
     bool isCurrentCustomKeymap();
+    bool applyAppKeymap(const QString &script);
+    void setActionMacroApplicationBound(bool enabled);
+    bool actionMacroScreenMatches() const;
 
     void postGoBack();
     void postGoHome();
@@ -92,6 +95,7 @@ signals:
     void grabCursor(bool grab);
     void actionMacroStateChanged(bool recording, bool playing, int eventCount);
     void actionMacroProgress(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
+    void actionMacroApplicationInterrupted();
     void actionMacroError(const QString &message);
 
 protected:

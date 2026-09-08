@@ -67,7 +67,7 @@ void AdbProcessImpl::initSignals()
             //P7C0218510000537        unauthorized ,手机端此时弹出调试认证，要允许调试
             emit adbProcessImplResult(qsc::AdbProcess::AER_ERROR_EXEC);
         }
-        qDebug() << "adb return " << exitCode << "exit status " << exitStatus;
+        if (!m_quiet) qDebug() << "adb return " << exitCode << "exit status " << exitStatus;
     });
 
     connect(this, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
@@ -76,20 +76,20 @@ void AdbProcessImpl::initSignals()
         } else {
             emit adbProcessImplResult(qsc::AdbProcess::AER_ERROR_START);
             QString err = QString("qprocess start error:%1 %2").arg(program()).arg(arguments().join(" "));
-            qCritical() << err.toStdString().c_str();
+            if (!m_quiet) qCritical() << err.toStdString().c_str();
         }
     });
 
     connect(this, &QProcess::readyReadStandardError, this, [this]() {
         QString tmp = QString::fromUtf8(readAllStandardError()).trimmed();
         m_errorOutput += tmp;
-        qWarning() << QString("AdbProcessImpl::error:%1").arg(tmp).toStdString().data();
+        if (!m_quiet) qWarning() << QString("AdbProcessImpl::error:%1").arg(tmp).toStdString().data();
     });
 
     connect(this, &QProcess::readyReadStandardOutput, this, [this]() {
         QString tmp = QString::fromUtf8(readAllStandardOutput()).trimmed();
         m_standardOutput += tmp;
-        qInfo() << QString("AdbProcessImpl::out:%1").arg(tmp).toStdString().data();
+        if (!m_quiet) qInfo() << QString("AdbProcessImpl::out:%1").arg(tmp).toStdString().data();
     });
 
     connect(this, &QProcess::started, this, [this]() { emit adbProcessImplResult(qsc::AdbProcess::AER_SUCCESS_START); });
@@ -104,7 +104,7 @@ void AdbProcessImpl::execute(const QString &serial, const QStringList &args)
         adbArgs << "-s" << serial;
     }
     adbArgs << args;
-    qDebug() << getAdbPath() << adbArgs.join(" ");
+    if (!m_quiet) qDebug() << getAdbPath() << adbArgs.join(" ");
     start(getAdbPath(), adbArgs);
 }
 

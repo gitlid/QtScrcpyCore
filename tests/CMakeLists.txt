@@ -43,7 +43,7 @@ target_include_directories(macroexecution_tests PRIVATE
 target_link_libraries(macroexecution_tests PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 foreach(case_name IN ITEMS speed_bounds speed_eight pause_wait pause_interval time_limit
     limit_during_interval limit_excludes_pause stop_paused touch_boundary key_boundary
-    hid_pause_release recording_pause record_stop_paused geometry_paused pause_reentrancy busy_paused same_timestamp)
+    hid_pause_release recording_pause record_stop_paused geometry_paused app_geometry app_resume_wait app_stop_geometry pause_reentrancy busy_paused same_timestamp)
     add_test(NAME execution_${case_name} COMMAND macroexecution_tests ${case_name})
     set_tests_properties(execution_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()
@@ -78,7 +78,7 @@ get_target_property(ROUTING_INCLUDES mousemapping_tests INCLUDE_DIRECTORIES)
 add_executable(inputrouting_tests inputrouting_test.cpp ${ROUTING_SOURCES})
 target_include_directories(inputrouting_tests PRIVATE ${ROUTING_INCLUDES})
 target_link_libraries(inputrouting_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
-foreach(case_name IN ITEMS legacy_look_on look_disabled look_enabled ordinary_no_capture legacy_capture unmapped_custom unmapped_normal mapped_target normal_primary_only look_moves released_side_mapped release_flag_no_view replace_capture edit_capture reload_no_view invalid_look_flags invalid_vertical_ratio unknown_with_primary)
+foreach(case_name IN ITEMS legacy_look_on look_disabled look_enabled ordinary_no_capture legacy_capture unmapped_custom unmapped_normal mapped_target normal_primary_only look_moves released_side_mapped release_flag_no_view replace_capture edit_capture reload_no_view invalid_look_flags invalid_vertical_ratio unknown_with_primary app_profile app_profile_busy)
     add_test(NAME routing_${case_name} COMMAND inputrouting_tests ${case_name})
     set_tests_properties(routing_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()

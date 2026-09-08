@@ -116,6 +116,13 @@ void ActionMacro::setCurrentScreen(const QSize &size)
     m_currentScreen = size;
     if ((m_recording || m_playing) && m_recordedScreen.isValid()
         && m_currentScreen != m_recordedScreen) {
+        if (m_playing && m_applicationBound) {
+            if (!m_paused) {
+                emit applicationInterrupted();
+                if (m_playing) pause();
+            }
+            return;
+        }
         abort(tr("Screen size or orientation changed. Restore the original display or record again."));
     }
 }
@@ -410,6 +417,7 @@ bool ActionMacro::resume()
     }
     if (!m_playing || !m_paused) { return false; }
     if (m_recordedScreen.isValid() && m_recordedScreen != m_currentScreen) {
+        if (m_applicationBound) { return false; } // Wait for the bound application's original geometry.
         abort(tr("Display changed while paused. Playback cannot resume."));
         return false;
     }
@@ -606,6 +614,7 @@ void ActionMacro::finishPlayback()
     m_paused = false;
     m_interruptedInput = false;
     m_playing = false;
+    m_applicationBound = false;
     m_waitingForNextLoop = false;
     releaseInputs();
     notifyState();

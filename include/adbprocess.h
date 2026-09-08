@@ -26,6 +26,7 @@ public:
     static void setAdbPath(const QString& adbPath);
 
     void execute(const QString &serial, const QStringList &args);
+    void setQuiet(bool quiet);
     void forward(const QString &serial, quint16 localPort, const QString &deviceSocketName);
     void forwardRemove(const QString &serial, quint16 localPort);
     void reverse(const QString &serial, const QString &deviceSocketName, quint16 localPort);

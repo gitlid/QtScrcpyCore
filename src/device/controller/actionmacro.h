@@ -35,6 +35,8 @@ public:
     void abort(const QString &reason);
     void releaseInputs();
     void setCurrentScreen(const QSize &size);
+    void setApplicationBound(bool enabled) { m_applicationBound = enabled; }
+    bool screenMatches() const { return !m_recordedScreen.isValid() || m_recordedScreen == m_currentScreen; }
     bool isRecording() const { return m_recording; }
     bool isPlaying() const { return m_playing; }
     bool requiresUhidKeyboard() const;
@@ -44,6 +46,7 @@ signals:
     void stateChanged(bool recording, bool playing, int eventCount);
     void progressChanged(int currentEvent, int totalEvents, int currentLoop, int totalLoops);
     void errorOccurred(const QString &message);
+    void applicationInterrupted();
 
 private slots:
     void onPlaybackTimer();
@@ -99,6 +102,7 @@ private:
     bool m_recording = false;
     bool m_playing = false;
     bool m_stopping = false;
+    bool m_applicationBound = false;
     bool m_waitingForNextLoop = false;
     int m_eventIndex = 0;
     int m_currentLoop = 0;

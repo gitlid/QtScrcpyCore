@@ -160,6 +160,20 @@ bool Device::isUhidKeyboardEnabled() const
     return m_controller && m_controller->isUhidKeyboardEnabled();
 }
 
+bool Device::applyAppKeymap(const QString &script)
+{
+    return !isCameraMode() && m_controller && m_controller->applyAppKeymap(script);
+}
+
+void Device::setActionMacroApplicationBound(bool enabled)
+{
+    if (m_controller) m_controller->setActionMacroApplicationBound(enabled);
+}
+bool Device::actionMacroScreenMatches() const
+{
+    return m_controller && m_controller->actionMacroScreenMatches();
+}
+
 void Device::releaseKeyboard()
 {
     if (m_controller) { m_controller->releaseKeyboard(); }
@@ -299,6 +313,7 @@ void Device::initSignals()
         });
         connect(m_controller, &Controller::actionMacroStateChanged, this, &IDevice::actionMacroStateChanged);
         connect(m_controller, &Controller::actionMacroProgress, this, &IDevice::actionMacroProgress);
+        connect(m_controller, &Controller::actionMacroApplicationInterrupted, this, &IDevice::actionMacroApplicationInterrupted);
         connect(m_controller, &Controller::actionMacroError, this, &IDevice::actionMacroError);
     }
     if (m_fileHandler) {

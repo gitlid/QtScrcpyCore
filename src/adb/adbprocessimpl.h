@@ -12,6 +12,7 @@ public:
     virtual ~AdbProcessImpl();
 
     void execute(const QString &serial, const QStringList &args);
+    void setQuiet(bool quiet) { m_quiet = quiet; }
     void forward(const QString &serial, quint16 localPort, const QString &deviceSocketName);
     void forwardRemove(const QString &serial, quint16 localPort);
     void reverse(const QString &serial, const QString &deviceSocketName, quint16 localPort);
@@ -38,5 +39,6 @@ private:
 private:
     QString m_standardOutput = "";
     QString m_errorOutput = "";
+    bool m_quiet = false;
     static QString s_adbPath;
 };

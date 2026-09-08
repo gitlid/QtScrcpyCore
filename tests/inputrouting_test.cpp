@@ -119,6 +119,25 @@ bool unknownWhilePrimaryHeld() {
     Fixture f(root());f.toggle();f.mouse(Qt::LeftButton,true);f.mouse(Qt::ForwardButton,true);f.mouse(Qt::ForwardButton,false);f.mouse(Qt::LeftButton,false);
     const auto t=touches(f.sent);return t.size()==2&&action(t[0])==0&&action(t[1])==1;
 }
+bool appProfileTransition() {
+    Fixture f(root());
+    if(!f.c.applyAppKeymap(json(root()))||!f.c.isCurrentCustomKeymap())return false;
+    f.mouse(Qt::BackButton,true);
+    if(touches(f.sent).size()!=1)return false;
+    if(!f.c.applyAppKeymap(QString()))return false;
+    const auto released=touches(f.sent);
+    if(f.c.isCurrentCustomKeymap()||released.size()!=2||action(released.last())!=1)return false;
+    f.sent.clear();f.mouse(Qt::BackButton,false);f.mouse(Qt::ForwardButton,true);f.mouse(Qt::ForwardButton,false);
+    if(!touches(f.sent).isEmpty())return false;
+    f.mouse(Qt::LeftButton,true);f.mouse(Qt::LeftButton,false);
+    const auto normal=touches(f.sent);return normal.size()==2&&x(normal.first())==900;
+}
+bool appProfileBusy() {
+    Fixture f(root());f.c.startActionRecording();
+    const QString original=f.c.currentKeymapScript();
+    if(f.c.applyAppKeymap(QString())||f.c.currentKeymapScript()!=original)return false;
+    f.c.stopActionRecording();return f.c.applyAppKeymap(QString());
+}
 }
 int main(int argc,char**argv){
     QCoreApplication app(argc,argv);
@@ -129,7 +148,8 @@ int main(int argc,char**argv){
         {"mapped_target",mappedTarget},{"normal_primary_only",normalPrimaryOnly},{"look_moves",explicitLookMoves},
         {"released_side_mapped",releasedSideStillMapped},{"release_flag_no_view",releaseFlagWithoutView},
         {"replace_capture",replaceReleasesCapture},{"edit_capture",editReleasesCapture},{"reload_no_view",reloadRemovesOldView},
-        {"invalid_look_flags",invalidLookFlags},{"invalid_vertical_ratio",invalidVerticalRatio},{"unknown_with_primary",unknownWhilePrimaryHeld}
+        {"invalid_look_flags",invalidLookFlags},{"invalid_vertical_ratio",invalidVerticalRatio},{"unknown_with_primary",unknownWhilePrimaryHeld},
+        {"app_profile",appProfileTransition},{"app_profile_busy",appProfileBusy}
     };
     int ran=0,passed=0;for(const auto&t:tests){if(argc>1&&QString(argv[1])!=t.first)continue;++ran;bool ok=t.second();if(ok)++passed;qInfo()<<t.first<<(ok?"PASS":"FAIL");}
     return ran>0&&ran==passed?0:1;
