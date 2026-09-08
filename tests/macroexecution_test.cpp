@@ -35,5 +35,26 @@ int main(int argc,char **argv) {
  test("pause_reentrancy",[]{int n=0;ActionMacro*ptr=nullptr;ActionMacro m([&](ControlMsg*p){++n;delete p;if(n==1)ptr->pause();});ptr=&m;load(m,{ev(0,text()),ev(80,text())},80);m.play(1,0);waitMs(20);if(n!=1||!m.isPaused())return false;m.resume();waitMs(150);return n==2&&!m.isPlaying();});
  test("busy_paused",[]{ActionMacro m([](ControlMsg*p){delete p;});load(m,{ev(200,text())},200);m.play(1,0);m.pause();QTemporaryDir dir;return !m.startRecording()&&!m.play(1,0)&&!m.save(dir.filePath("x.json"))&&!m.pause();});
  test("same_timestamp",[]{int n=0;ActionMacro m([&](ControlMsg*p){++n;delete p;});QJsonArray a;for(int i=0;i<300;++i)a.append(ev(0,text()));load(m,a,0);m.play(1,0,8.,0);waitMs(200);return n==300&&!m.isPlaying();});
+ test("app_geometry",[]{
+  QVector<QJsonObject>out;int interruptions=0;ActionMacro m([&](ControlMsg*p){out.append(p->toJson());delete p;});
+  QObject::connect(&m,&ActionMacro::applicationInterrupted,&m,[&](){++interruptions;});
+  if(!load(m,{ev(0,touch(0)),ev(800,touch(1)),ev(900,text())},900))return false;
+  m.setApplicationBound(true);m.play(1,0,8.,0);waitMs(20);m.setCurrentScreen(QSize(200,100));
+  if(interruptions!=1||!m.isPlaying()||!m.isPaused()||m.screenMatches()||out.size()!=2||out.last()["action"].toInt()!=1)return false;
+  m.setCurrentScreen(QSize(100,200));if(!m.screenMatches()||!m.resume())return false;waitMs(150);
+  return !m.isPlaying()&&out.size()==3&&out.last()["kind"].toString()=="text";
+ });
+ test("app_resume_wait",[]{
+  ActionMacro m([](ControlMsg*p){delete p;});int interruptions=0;
+  QObject::connect(&m,&ActionMacro::applicationInterrupted,&m,[&](){++interruptions;});
+  load(m,{ev(500,touch(0))},500);m.setApplicationBound(true);m.play(1,0);m.pause();m.setCurrentScreen(QSize(200,100));
+  if(interruptions||m.resume()||!m.isPlaying()||!m.isPaused())return false;
+  m.setCurrentScreen(QSize(100,200));const bool ok=m.resume();m.stopPlayback();return ok;
+ });
+ test("app_stop_geometry",[]{
+  ActionMacro m([](ControlMsg*p){delete p;});load(m,{ev(500,touch(0))},500);m.setApplicationBound(true);m.play(1,0);m.setCurrentScreen(QSize(200,100));
+  if(!m.isPaused())return false;m.stopPlayback();m.setCurrentScreen(QSize(100,200));if(m.resume())return false;
+  m.play(1,0);m.setCurrentScreen(QSize(200,100));return !m.isPlaying();
+ });
  qInfo("Macro execution v2: %d/%d",passed,ran);return ran>0&&ran==passed?0:1;
 }

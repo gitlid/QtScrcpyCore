@@ -36,6 +36,11 @@ void AdbProcess::execute(const QString &serial, const QStringList &args)
     m_adbImpl->execute(serial, args);
 }
 
+void AdbProcess::setQuiet(bool quiet)
+{
+    m_adbImpl->setQuiet(quiet);
+}
+
 bool AdbProcess::isRuning()
 {
     return m_adbImpl->isRuning();

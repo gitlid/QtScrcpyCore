@@ -38,6 +38,7 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
         emit actionMacroStateChanged(recording, playing, count);
     });
     connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
+    connect(m_actionMacro, &ActionMacro::applicationInterrupted, this, &Controller::actionMacroApplicationInterrupted);
     connect(m_actionMacro, &ActionMacro::errorOccurred, this, &Controller::actionMacroError);
 
     updateScript(gameScript);
@@ -219,6 +220,28 @@ bool Controller::isCurrentCustomKeymap()
     }
 
     return m_inputConvert->isCurrentCustomKeymap();
+}
+
+bool Controller::applyAppKeymap(const QString &script)
+{
+    if (m_cameraMode || isActionPlaying() || isActionRecording()) { return false; }
+    // A profile transition releases held input and destroys delayed mapping callbacks.
+    resetInputState();
+    updateScript(script);
+    if (auto *game = qobject_cast<InputConvertGame *>(m_inputConvert.data())) {
+        game->restoreGameMap(true);
+    }
+    return true;
+}
+
+void Controller::setActionMacroApplicationBound(bool enabled)
+{
+    if (m_actionMacro) m_actionMacro->setApplicationBound(enabled);
+}
+
+bool Controller::actionMacroScreenMatches() const
+{
+    return m_actionMacro && m_actionMacro->screenMatches();
 }
 
 void Controller::postBackOrScreenOn(bool down)

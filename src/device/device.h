@@ -80,6 +80,9 @@ public:
     bool isFlexDisplay() const override;
 
     void updateScript(QString script) override;
+    bool applyAppKeymap(const QString &script) override;
+    void setActionMacroApplicationBound(bool enabled) override;
+    bool actionMacroScreenMatches() const override;
     bool isCurrentCustomKeymap() override;
 
     bool isUhidKeyboardEnabled() const override;
