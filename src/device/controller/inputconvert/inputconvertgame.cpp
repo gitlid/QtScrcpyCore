@@ -10,6 +10,7 @@
 #endif
 
 #include "inputconvertgame.h"
+#include "../../../../include/viewgeometry.h"
 
 #define CURSOR_POS_CHECK 50
 
@@ -713,6 +714,9 @@ void InputConvertGame::moveCursorTo(const QMouseEvent *from, const QPoint &local
     QPoint globalPos = from->globalPosition().toPoint();
 #endif
     globalPos -= posOffset;
+    if (const auto *viewEvent = dynamic_cast<const qsc::ViewMouseEvent *>(from)) {
+        globalPos = viewEvent->desktopPosition(localPosPixel);
+    }
     //qDebug()<<"move cursor to "<<globalPos<<" offset "<<posOffset;
 #ifdef Q_OS_MACOS
     // On macOS, QCursor::setPos() posts a synthetic mouse-moved event (CGEventPost)
