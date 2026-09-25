@@ -597,6 +597,7 @@ void Controller::cameraZoomOut()
 
 void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_panelActive && from && from->type() == QEvent::MouseMove && from->buttons() == Qt::NoButton) return;
     cancelPanelSwipe();
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);

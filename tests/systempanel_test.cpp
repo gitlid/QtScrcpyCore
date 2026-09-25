@@ -99,6 +99,12 @@ void manual() {
     const int count=f.output.size();wait(500);require(f.output.size()==count,"manual input cancels gesture");
     const auto t=f.touches();require(action(t[t.size()-2])==1&&action(t.last())==0&&x(t.last())==400,"release before manual down");
 }
+void hover() {
+    Fixture f;f.c.expandSettingsPanel();wait(230);
+    QMouseEvent move(QEvent::MouseMove,QPointF(400,600),Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+    f.c.mouseEvent(&move,QSize(1080,2340),QSize(1080,2340));wait(500);
+    require(y(f.touches().last())==1755,"moving the desktop pointer without clicking must not interrupt the swipe");
+}
 }
 int main(int argc,char **argv) {
     QCoreApplication app(argc,argv);
@@ -107,7 +113,7 @@ int main(int argc,char **argv) {
         {"landscape",[]{gesture(true,QSize(2340,1080));}}, {"replace",replacement},
         {"cancel_early",[]{cancel(true);}}, {"cancel_contact",[]{cancel(false);}}, {"geometry",geometry},
         {"keymap",keymap},{"macro",macro},{"paused",paused},{"unavailable",unavailable},{"transport",transport},
-        {"disconnect",disconnect},{"manual",manual}};
+        {"disconnect",disconnect},{"manual",manual},{"hover",hover}};
     int count=0,failed=0;
     for(const auto &test:tests){if(argc>1&&QString::fromLocal8Bit(argv[1])!=test.first)continue;++count;
         try{test.second();std::printf("PASS %s\n",qPrintable(test.first));}
