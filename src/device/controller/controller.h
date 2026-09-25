@@ -5,6 +5,8 @@
 #include <QObject>
 #include <QPointer>
 #include <QSize>
+#include <QTimer>
+#include <QElapsedTimer>
 
 #include "inputconvertbase.h"
 #include "uhidkeyboard.h"
@@ -108,6 +110,10 @@ private:
     void postKeyCodeClick(AndroidKeycode keycode);
     void sendPendingResize();
     void resetInputState(bool preserveKeymap = false);
+    void startPanelSwipe(bool settings);
+    void advancePanelSwipe();
+    void cancelPanelSwipe();
+    bool sendPanelTouch(AndroidMotioneventAction action);
 
 private:
     QPointer<Receiver> m_receiver;
@@ -125,6 +131,12 @@ private:
     KeyboardRouting m_keyboardRouting;
     bool m_uhidEnabled = false;
     bool m_uhidCreated = false;
+    QTimer m_panelTimer;
+    QElapsedTimer m_panelClock;
+    QSize m_panelSize;
+    QPoint m_panelPoint;
+    bool m_panelActive = false;
+    bool m_panelContact = false;
 };
 
 #endif // CONTROLLER_H

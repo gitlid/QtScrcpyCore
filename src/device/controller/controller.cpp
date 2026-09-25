@@ -40,6 +40,9 @@ Controller::Controller(std::function<qint64(const QByteArray&)> sendData, QStrin
     connect(m_actionMacro, &ActionMacro::progressChanged, this, &Controller::actionMacroProgress);
     connect(m_actionMacro, &ActionMacro::applicationInterrupted, this, &Controller::actionMacroApplicationInterrupted);
     connect(m_actionMacro, &ActionMacro::errorOccurred, this, &Controller::actionMacroError);
+    m_panelTimer.setInterval(16);
+    m_panelTimer.setTimerType(Qt::PreciseTimer);
+    connect(&m_panelTimer, &QTimer::timeout, this, &Controller::advancePanelSwipe);
 
     updateScript(gameScript);
 }
@@ -107,6 +110,7 @@ void Controller::releaseKeyboard()
 
 void Controller::shutdownKeyboard()
 {
+    cancelPanelSwipe();
     QCoreApplication::removePostedEvents(this, ControlMsg::Control);
     m_keyboard.clear();
     m_keyboardRouting.clearUhid();
@@ -121,6 +125,7 @@ void Controller::shutdownKeyboard()
 
 void Controller::setFrameSize(const QSize &size)
 {
+    if (size != m_frameSize) cancelPanelSwipe();
     m_frameSize = size;
     if (m_actionMacro) { m_actionMacro->setCurrentScreen(size); }
 }
@@ -128,6 +133,7 @@ void Controller::setFrameSize(const QSize &size)
 void Controller::resetInputState(bool preserveKeymap)
 {
     if (m_inputBlocked) { return; }
+    cancelPanelSwipe();
     m_inputBlocked = true;
     m_keyboardRouting.clear();
     const bool gameEnabled = preserveKeymap && isCurrentCustomKeymap();
@@ -165,11 +171,13 @@ void Controller::postControlMsg(ControlMsg *controlMsg)
         delete controlMsg;
         return;
     }
+    cancelPanelSwipe();
     QCoreApplication::postEvent(this, controlMsg);
 }
 
 void Controller::setCameraMode(bool cameraMode)
 {
+    cancelPanelSwipe();
     m_cameraMode = cameraMode;
 }
 
@@ -196,6 +204,7 @@ void Controller::test(QRect rc)
 
 void Controller::updateScript(QString gameScript)
 {
+    cancelPanelSwipe();
     m_keyboardRouting.clear();
     releaseKeyboard();
     m_gameScript = gameScript;
@@ -224,7 +233,7 @@ bool Controller::isCurrentCustomKeymap()
 
 bool Controller::applyAppKeymap(const QString &script)
 {
-    if (m_cameraMode || isActionPlaying() || isActionRecording()) { return false; }
+    if (m_cameraMode || m_panelActive || isActionPlaying() || isActionRecording()) { return false; }
     // A profile transition releases held input and destroys delayed mapping callbacks.
     resetInputState();
     updateScript(script);
@@ -301,16 +310,69 @@ void Controller::cut()
 
 void Controller::expandNotificationPanel()
 {
-    ControlMsg *controlMsg = new ControlMsg(ControlMsg::CMT_EXPAND_NOTIFICATION_PANEL);
-    if (!controlMsg) {
-        return;
-    }
-    postControlMsg(controlMsg);
+    startPanelSwipe(false);
 }
 
 void Controller::expandSettingsPanel()
 {
-    postControlMsg(new ControlMsg(ControlMsg::CMT_EXPAND_SETTINGS_PANEL));
+    startPanelSwipe(true);
+}
+
+void Controller::startPanelSwipe(bool settings)
+{
+    if (m_cameraMode || m_inputBlocked || isActionPlaying() || isActionPaused()
+        || m_frameSize.width() < 4 || m_frameSize.height() < 4) return;
+    resetInputState(true);
+    // OEM split shades may route both StatusBarManager expand calls to the
+    // notification panel. Start on the corresponding half of the phone's raw
+    // display, independently of desktop-only rotation and configured keymaps.
+    m_panelSize = m_frameSize;
+    m_panelPoint = QPoint(m_panelSize.width() * (settings ? 3 : 1) / 4, 1);
+    ControlMsg collapse(ControlMsg::CMT_COLLAPSE_PANELS);
+    if (!sendMessage(&collapse)) return;
+    m_panelActive = true;
+    m_panelContact = false;
+    m_panelClock.start();
+    m_panelTimer.start();
+}
+
+bool Controller::sendPanelTouch(AndroidMotioneventAction action)
+{
+    ControlMsg message(ControlMsg::CMT_INJECT_TOUCH);
+    message.setInjectTouchMsgData(POINTER_ID_GENERIC_FINGER, action,
+        static_cast<AndroidMotioneventButtons>(0), static_cast<AndroidMotioneventButtons>(0),
+        QRect(m_panelPoint, m_panelSize), action == AMOTION_EVENT_ACTION_UP ? 0.0f : 1.0f);
+    const bool sent = sendMessage(&message);
+    if (sent && m_actionMacro) m_actionMacro->record(message);
+    return sent;
+}
+
+void Controller::advancePanelSwipe()
+{
+    if (!m_panelActive) return;
+    if (m_cameraMode || m_inputBlocked || isActionPlaying() || isActionPaused() || m_frameSize != m_panelSize) {
+        cancelPanelSwipe(); return;
+    }
+    if (!m_panelContact) {
+        if (m_panelClock.elapsed() < 180) return; // Allow an already-open panel to collapse.
+        m_panelContact = true;
+        m_panelClock.restart();
+        if (!sendPanelTouch(AMOTION_EVENT_ACTION_DOWN)) cancelPanelSwipe();
+        return;
+    }
+    const qint64 elapsed = m_panelClock.elapsed();
+    const int endY = qMax(2, m_panelSize.height() * 3 / 4);
+    m_panelPoint.setY(1 + int((endY - 1) * qMin<qint64>(elapsed, 320) / 320));
+    if (!sendPanelTouch(AMOTION_EVENT_ACTION_MOVE)) { cancelPanelSwipe(); return; }
+    if (elapsed >= 320) cancelPanelSwipe();
+}
+
+void Controller::cancelPanelSwipe()
+{
+    const bool release = m_panelContact;
+    m_panelActive = m_panelContact = false;
+    m_panelTimer.stop();
+    if (release) sendPanelTouch(AMOTION_EVENT_ACTION_UP);
 }
 
 void Controller::collapsePanel()
@@ -431,6 +493,7 @@ bool Controller::startActionRecording()
 
 bool Controller::stopActionRecording()
 {
+    cancelPanelSwipe();
     return m_actionMacro && m_actionMacro->stopRecording();
 }
 
@@ -465,6 +528,7 @@ bool Controller::playActionMacroAdvanced(int repeatCount, int intervalMs, double
 
 bool Controller::pauseActionMacro()
 {
+    cancelPanelSwipe();
     if (!m_actionMacro) { return false; }
     QCoreApplication::removePostedEvents(this, ControlMsg::Control);
     const bool ok = m_actionMacro->pause();
@@ -483,6 +547,7 @@ qint64 Controller::actionMacroElapsedMs() const { return m_actionMacro ? m_actio
 
 void Controller::stopActionPlayback()
 {
+    cancelPanelSwipe();
     if (m_actionMacro) {
         m_actionMacro->stopPlayback();
     }
@@ -532,6 +597,8 @@ void Controller::cameraZoomOut()
 
 void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    if (m_panelActive && from && from->type() == QEvent::MouseMove && from->buttons() == Qt::NoButton) return;
+    cancelPanelSwipe();
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);
     if (m_inputConvert) {
@@ -546,6 +613,7 @@ void Controller::mouseEvent(const QMouseEvent *from, const QSize &frameSize, con
 
 void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    cancelPanelSwipe();
     if (m_inputBlocked || (m_actionMacro && m_actionMacro->isPlaying())) { return; }
     setFrameSize(frameSize);
     if (m_inputConvert) {
@@ -555,6 +623,7 @@ void Controller::wheelEvent(const QWheelEvent *from, const QSize &frameSize, con
 
 void Controller::keyEvent(const QKeyEvent *from, const QSize &frameSize, const QSize &showSize)
 {
+    cancelPanelSwipe();
     if (!from || m_cameraMode || m_inputBlocked || isActionPlaying()
         || !frameSize.isValid() || !showSize.isValid()
         || (from->type() != QEvent::KeyPress && from->type() != QEvent::KeyRelease)) { return; }

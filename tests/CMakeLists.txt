@@ -102,3 +102,11 @@ foreach(case_name IN ITEMS plain disabled unbound mapped scaled second_drag burs
     add_test(NAME doubleclick_${case_name} COMMAND doubleclick_tests ${case_name})
     set_tests_properties(doubleclick_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()
+
+add_executable(systempanel_tests systempanel_test.cpp ${ROUTING_SOURCES})
+target_include_directories(systempanel_tests PRIVATE ${ROUTING_INCLUDES})
+target_link_libraries(systempanel_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+foreach(case_name IN ITEMS notifications settings landscape replace cancel_early cancel_contact geometry keymap macro paused unavailable transport disconnect manual hover)
+    add_test(NAME panel_${case_name} COMMAND systempanel_tests ${case_name})
+    set_tests_properties(panel_${case_name} PROPERTIES TIMEOUT 15)
+endforeach()
