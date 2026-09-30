@@ -87,6 +87,8 @@ public:
 
     bool isUhidKeyboardEnabled() const override;
     void releaseKeyboard() override;
+    bool sendImeShortcut(int shortcut) override;
+    bool pasteImeText(const QString &text) override;
     bool startActionRecording() override;
     bool stopActionRecording() override;
     bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const override;

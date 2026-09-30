@@ -157,6 +157,12 @@ public:
 
     virtual bool isUhidKeyboardEnabled() const = 0;
     virtual void releaseKeyboard() = 0;
+    // Explicit per-device IME helpers. Never broadcast through group control.
+    // 0: Shift, 1: Ctrl+Space, 2: Shift+Space. Phone IMEs choose their bindings.
+    virtual bool sendImeShortcut(int shortcut) { Q_UNUSED(shortcut); return false; }
+    // Unicode clipboard-paste transport, not ASCII key injection. Replaces the
+    // phone clipboard; does not access the computer clipboard. No delivery ACK.
+    virtual bool pasteImeText(const QString &text) { Q_UNUSED(text); return false; }
     virtual bool startActionRecording() = 0;
     virtual bool stopActionRecording() = 0;
     virtual bool saveActionMacro(const QString &fileName, QString *error = Q_NULLPTR) const = 0;

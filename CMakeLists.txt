@@ -79,11 +79,13 @@ source_group(include FILES ${QSC_INCLUDE_SOURCES})
 set(QSC_DEVICE_SOURCES
     src/device/device.h
     src/device/device.cpp
+    src/device/imeinput.cpp
     src/device/compat.h
     src/device/android/input.h
     src/device/android/keycodes.h
     src/device/controller/controller.h
     src/device/controller/controller.cpp
+    src/device/controller/imecontroller.cpp
     src/device/controller/uhidkeyboard.h
     src/device/controller/uhidkeyboard.cpp
     src/device/controller/actionmacro.h
