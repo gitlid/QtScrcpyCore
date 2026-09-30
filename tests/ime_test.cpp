@@ -38,7 +38,10 @@ void checkShortcut(int which) {
     const QVector<QByteArray> expected = which==0 ? QVector<QByteArray>{report(2),report(0)}
         : QVector<QByteArray>{report(which==1?1:2),report(which==1?1:2,44),report(which==1?1:2),report(0)};
     require(r.size()>=expected.size(),"all report transitions");
-    require(r.mid(r.size()-expected.size())==expected,"modifier and Space order, release last");
+    // Compare each wire report directly; QVector::operator== in Qt 5.15
+    // instantiates deprecated MSVC checked iterators with recent /WX builds.
+    for (int i = 0; i < expected.size(); ++i)
+        require(r.at(r.size()-expected.size()+i)==expected.at(i),"modifier and Space order, release last");
     for(const auto &b:f.sent) require(quint8(b[0])==13,"no SDK event or second device");
 }
 void mapped() {
