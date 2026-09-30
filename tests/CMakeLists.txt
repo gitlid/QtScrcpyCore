@@ -51,6 +51,7 @@ endforeach()
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
 add_executable(mousemapping_tests mousemapping_test.cpp
     ${ROOT}/src/device/controller/controller.cpp ${ROOT}/src/device/controller/controller.h
+    ${ROOT}/src/device/controller/imecontroller.cpp
     ${ROOT}/src/device/controller/actionmacro.cpp ${ROOT}/src/device/controller/actionmacro.h
     ${ROOT}/src/device/controller/bufferutil.cpp
     ${ROOT}/src/device/controller/inputconvert/controlmsg.cpp
@@ -109,4 +110,12 @@ target_link_libraries(systempanel_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Q
 foreach(case_name IN ITEMS notifications settings landscape replace cancel_early cancel_contact geometry keymap macro paused unavailable transport disconnect manual hover)
     add_test(NAME panel_${case_name} COMMAND systempanel_tests ${case_name})
     set_tests_properties(panel_${case_name} PROPERTIES TIMEOUT 15)
+endforeach()
+
+add_executable(ime_tests ime_test.cpp ${ROUTING_SOURCES})
+target_include_directories(ime_tests PRIVATE ${ROUTING_INCLUDES})
+target_link_libraries(ime_tests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+foreach(case_name IN ITEMS shift ctrl_space shift_space mapped invalid unicode bounds busy camera sdk failure resume)
+    add_test(NAME ime_${case_name} COMMAND ime_tests ${case_name})
+    set_tests_properties(ime_${case_name} PROPERTIES TIMEOUT 15)
 endforeach()

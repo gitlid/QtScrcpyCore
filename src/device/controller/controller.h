@@ -28,6 +28,8 @@ public:
     bool isUhidKeyboardEnabled() const { return m_uhidEnabled; }
     void uhidKeyEvent(const QKeyEvent *event);
     void releaseKeyboard();
+    bool sendImeShortcut(int shortcut);
+    bool pasteImeText(const QString &text);
     void shutdownKeyboard();
     quint8 keyboardLeds() const { return m_keyboard.leds(); }
 
